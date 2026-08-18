@@ -742,6 +742,8 @@ let activeSubProgramId = null;
 let activeStage = 'dana';
 let db = null;                   // diisi setelah bootstrap Firebase selesai dicek
 
+const RZ_LOGO_B64 = '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';
+
 const ALL_STAGES = [
   {key:'pra', label:'Pra'},
   {key:'dana', label:'Dana'},
@@ -753,6 +755,7 @@ const TABS = ALL_STAGES.filter(s=>s.key!=='pra');
 
 const fmtRp = n => 'Rp ' + (n||0).toLocaleString('id-ID');
 const fmtDate = d => d ? new Date(d).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+const fmtDateFull = d => d ? new Date(d+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '—';
 
 /* ---------------------------- REALTIME SYNC ----------------------------- */
 function normalizeMitra(m){
@@ -1458,12 +1461,15 @@ function renderEvaluasi(m,sp,c){
         <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}','${sp.id}')">+ Tambah Catatan</button>
       </div>
       ${sp.evaluasi.catatan.map((cn,i)=>`
-        <div class="legalitas-item">
+        <div class="legalitas-item" style="cursor:pointer" onclick="lihatCatatan('${m.id}','${sp.id}',${i})">
           <div class="legalitas-left">
-            <div class="name">${fmtDate(cn.tanggal)}</div>
-            <div class="date">${cn.ringkasan}</div>
+            <div class="name">${fmtDate(cn.tanggal)}${cn.waktu?` · ${cn.waktu}`:''} — ${escHtml(cn.agenda)||escHtml(cn.ringkasan)||'(Tanpa agenda)'}</div>
+            <div class="date">${escHtml(cn.tempat)||escHtml(cn.ringkasan)||''}</div>
           </div>
-          <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
+          <div style="display:flex; gap:4px;" onclick="event.stopPropagation();">
+            <button class="icon-btn" title="Unduh Notulensi Word" onclick="unduhNotulensi('${m.id}','${sp.id}',${i})">⬇️</button>
+            <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
+          </div>
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
     </div>`;
 }
@@ -1518,19 +1524,38 @@ function hapusJadwal(mid,spId,idx){
   renderAll();
 }
 function openCatatanModal(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
   openModal(`
     <h3>Tambah Catatan Hasil Meeting</h3>
     <div class="field"><label>Tanggal</label><input id="f_ctgl" type="date"></div>
-    <div class="field"><label>Ringkasan</label><textarea id="f_cringkasan" placeholder="Poin penting hasil meeting..."></textarea></div>
+    <div class="field"><label>Waktu</label><input id="f_cwaktu" type="time"></div>
+    <div class="field"><label>Tempat</label><input id="f_ctempat" placeholder="Contoh: Kantor Rumah Zakat / Zoom Meeting"></div>
+    <div class="field"><label>Peserta (satu nama per baris)</label><textarea id="f_cpeserta" placeholder="Nama peserta 1&#10;Nama peserta 2"></textarea></div>
+    <div class="field"><label>Agenda</label><input id="f_cagenda" placeholder="Contoh: Evaluasi Progres Triwulan"></div>
+    <div class="field"><label>Bahasan Diskusi</label><textarea id="f_cbahasan" placeholder="Ringkasan pembahasan meeting..."></textarea></div>
+    <div class="field"><label>Tindak Lanjut (satu poin per baris)</label><textarea id="f_ctindak" placeholder="Poin tindak lanjut 1&#10;Poin tindak lanjut 2"></textarea></div>
+    <div class="field"><label>Perwakilan Rumah Zakat</label><input id="f_crz" placeholder="Nama perwakilan Rumah Zakat"></div>
+    <div class="field"><label>Perwakilan ${escHtml(m.nama)}</label><input id="f_cmitra" placeholder="Nama perwakilan mitra"></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanCatatan('${mid}','${spId}')">Simpan</button></div>
   `);
 }
 function simpanCatatan(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const ringkasan = document.getElementById('f_cringkasan').value.trim();
-  if(!ringkasan) return;
-  sp.evaluasi.catatan.push({tanggal:document.getElementById('f_ctgl').value||new Date().toISOString().slice(0,10), ringkasan});
+  const agenda = document.getElementById('f_cagenda').value.trim();
+  if(!agenda) return;
+  const peserta = document.getElementById('f_cpeserta').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  const tindakLanjut = document.getElementById('f_ctindak').value.split('\n').map(s=>s.trim()).filter(Boolean);
+  sp.evaluasi.catatan.push({
+    tanggal: document.getElementById('f_ctgl').value || new Date().toISOString().slice(0,10),
+    waktu: document.getElementById('f_cwaktu').value || '',
+    tempat: document.getElementById('f_ctempat').value || '',
+    peserta, agenda,
+    bahasan: document.getElementById('f_cbahasan').value || '',
+    tindakLanjut,
+    perwakilanRZ: document.getElementById('f_crz').value || '',
+    perwakilanMitra: document.getElementById('f_cmitra').value || ''
+  });
   persistMitra(m);
   closeModal(); renderAll();
 }
@@ -1540,6 +1565,83 @@ function hapusCatatan(mid,spId,idx){
   sp.evaluasi.catatan.splice(idx,1);
   persistMitra(m);
   renderAll();
+}
+function lihatCatatan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const cn = sp.evaluasi.catatan[idx];
+  const pesertaHtml = (cn.peserta&&cn.peserta.length) ? `<ol style="margin:4px 0 0 18px; padding:0;">${cn.peserta.map(p=>`<li>${escHtml(p)}</li>`).join('')}</ol>` : '<span style="color:var(--ink-faint)">—</span>';
+  const tindakHtml = (cn.tindakLanjut&&cn.tindakLanjut.length) ? `<ul style="margin:4px 0 0 18px; padding:0;">${cn.tindakLanjut.map(p=>`<li>${escHtml(p)}</li>`).join('')}</ul>` : '<span style="color:var(--ink-faint)">—</span>';
+  openModal(`
+    <h3>Detail Notulensi Meeting</h3>
+    <div class="field"><label>Hari / Tanggal</label><div>${fmtDateFull(cn.tanggal)}</div></div>
+    <div class="field"><label>Waktu</label><div>${escHtml(cn.waktu)||'—'}</div></div>
+    <div class="field"><label>Tempat</label><div>${escHtml(cn.tempat)||'—'}</div></div>
+    <div class="field"><label>Peserta</label>${pesertaHtml}</div>
+    <div class="field"><label>Agenda</label><div>${escHtml(cn.agenda)||escHtml(cn.ringkasan)||'—'}</div></div>
+    <div class="field"><label>Bahasan Diskusi</label><div style="white-space:pre-wrap;">${escHtml(cn.bahasan)||escHtml(cn.ringkasan)||'—'}</div></div>
+    <div class="field"><label>Tindak Lanjut</label>${tindakHtml}</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Tutup</button>
+      <button class="btn btn-danger-ghost" onclick="hapusCatatan('${mid}','${spId}',${idx}); closeModal();">Hapus</button>
+      <button class="btn btn-primary" onclick="unduhNotulensi('${mid}','${spId}',${idx})">⬇️ Unduh Notulensi (Word)</button>
+    </div>
+  `);
+}
+function sanitizeFilename(s){
+  return String(s||'').replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,' ').trim();
+}
+function unduhNotulensi(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const cn = sp.evaluasi.catatan[idx];
+  const agenda = cn.agenda || cn.ringkasan || 'Meeting';
+  const tanggal = cn.tanggal || new Date().toISOString().slice(0,10);
+  const pesertaLi = (cn.peserta&&cn.peserta.length? cn.peserta : ['—']).map(p=>`<li>${escHtml(p)}</li>`).join('');
+  const tindakLi = (cn.tindakLanjut&&cn.tindakLanjut.length? cn.tindakLanjut : ['—']).map(p=>`<li>${escHtml(p)}</li>`).join('');
+  const bahasan = escHtml(cn.bahasan||cn.ringkasan||'—').replace(/\n/g,'<br>');
+  const html = `<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset="utf-8">
+<title>Notulensi Meeting</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<style>@page { size: 21cm 29.7cm; margin: 2cm; }</style>
+</head>
+<body style="font-family:Calibri,Arial,sans-serif; font-size:11pt; color:#222222;">
+  <div style="text-align:right; margin-bottom:10px;"><img src="data:image/png;base64,${RZ_LOGO_B64}" width="120" height="46"></div>
+  <table style="border-collapse:collapse; width:100%;">
+    <tr><td colspan="2" style="border:1px solid #E8A33D; background:#F2994A; color:#ffffff; font-weight:bold; text-align:center; font-size:13pt; padding:8px;">Notulensi Meeting</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; width:22%; padding:8px 10px; vertical-align:top;">Hari / Tanggal</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${fmtDateFull(tanggal)}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Waktu</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${escHtml(cn.waktu)||'—'}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Tempat</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${escHtml(cn.tempat)||'—'}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Peserta</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;"><ol style="margin:0; padding-left:18px;">${pesertaLi}</ol></td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Agenda</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${escHtml(agenda)}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Bahasan Diskusi</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${bahasan}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:bold; padding:8px 10px; vertical-align:top;">Tindak Lanjut</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;"><ul style="margin:0; padding-left:18px;">${tindakLi}</ul></td></tr>
+  </table>
+  <p style="margin-top:18px;">Demikian notulensi ini disusun dengan sebenar-benarnya, mohon koreksi jika terdapat kesalahan</p>
+  <p>Notulen<br>Program Collaboration Admin</p>
+  <table style="border-collapse:collapse; width:100%; margin-top:10px;">
+    <tr><td colspan="2" style="border:none; text-align:center; font-weight:600; padding:6px 10px;">Disepakati oleh</td></tr>
+    <tr>
+      <td style="border:none; width:50%; text-align:center; font-weight:600; padding:6px 10px;">Perwakilan Rumah Zakat</td>
+      <td style="border:none; width:50%; text-align:center; font-weight:600; padding:6px 10px;">Perwakilan ${escHtml(m.nama)}</td>
+    </tr>
+    <tr>
+      <td style="border:none; text-align:center; padding-top:60px;">${escHtml(cn.perwakilanRZ)||'&nbsp;'}</td>
+      <td style="border:none; text-align:center; padding-top:60px;">${escHtml(cn.perwakilanMitra)||'&nbsp;'}</td>
+    </tr>
+  </table>
+</body>
+</html>`;
+  const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+  const filename = `${tanggal} Notulensi Meeting ${sanitizeFilename(agenda)}.doc`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
 
 /* --------------------------- OVERVIEW (ALL MITRA) ----------------------- */
