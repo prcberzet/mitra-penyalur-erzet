@@ -471,7 +471,7 @@
   <div class="login-box">
     <div class="brand-mark"><span class="dot"></span>Menara Kemitraan</div>
     <h2>Masuk ke Dashboard</h2>
-    <div class="sub">Gunakan akun email &amp; password yang sudah didaftarkan di Firebase Authentication.</div>
+    <div class="sub">Silahkan login menggunakan email dan password</div>
     <form id="loginForm">
       <div class="field"><label>Email</label><input id="loginEmail" type="email" required autocomplete="username"></div>
       <div class="field"><label>Password</label><input id="loginPassword" type="password" required autocomplete="current-password"></div>
@@ -567,7 +567,7 @@
     return 'Gagal login. Coba lagi.';
   }
 
-  window.addEventListener('fb-ready', () => {
+  (function wireLogin(){
     const fb = window.__fb;
     if(!fb || !fb.auth) return; // mode demo (belum dikonfigurasi): tidak butuh login
 
@@ -598,7 +598,7 @@
       window.__fbUser = user;
       window.dispatchEvent(new Event('auth-changed'));
     });
-  });
+  })();
 </script>
 
 <script>
