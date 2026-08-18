@@ -3,6 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- SPA routing GitHub Pages: mengembalikan URL asli (mis. /CSF/klinik/evaluasi) yang
+     "dititipkan" oleh 404.html lewat query string, sebelum aplikasi mulai jalan.
+     Lihat 404.html — file ini harus diupload berdampingan di root repo agar berfungsi. -->
+<script>
+  (function(l){
+    if(l.search[1]==='/'){
+      var decoded = l.search.slice(1).split('&').map(function(s){ return s.replace(/~and~/g,'&'); }).join('?');
+      window.history.replaceState(null, null, l.pathname.slice(0,-1) + decoded + l.hash);
+    }
+  })(window.location);
+</script>
 <title>Mitra Penyalur Erzet — Monitoring Mitra</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -753,6 +764,69 @@ const ALL_STAGES = [
 ];
 const TABS = ALL_STAGES.filter(s=>s.key!=='pra');
 
+/* ------------------------------ URL ROUTING ----------------------------- */
+/* Base path otomatis: kalau di-hosting di *.github.io/nama-repo/, base = /nama-repo/ */
+const BASE_PATH = (function(){
+  if(location.hostname.endsWith('github.io')){
+    const seg = location.pathname.split('/').filter(Boolean)[0];
+    return seg ? '/'+seg+'/' : '/';
+  }
+  return '/';
+})();
+function slugify(s){
+  return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'') || 'item';
+}
+function currentPath(){
+  if(!selectedMitraId) return BASE_PATH;
+  const m = currentMitra();
+  if(!m) return BASE_PATH;
+  const parts = [slugify(m.nama)];
+  const sp = currentSubProgram();
+  if(sp) parts.push(slugify(sp.nama));
+  parts.push(activeStage);
+  return BASE_PATH + parts.join('/');
+}
+/* Dipanggil pada aksi navigasi (klik mitra/tab/sub program) -> bikin entri history baru agar tombol Back browser jalan */
+function navigateUrl(){
+  const path = currentPath();
+  if(location.pathname !== path){
+    history.pushState(null,'',path + location.search + location.hash);
+  }
+}
+/* Dipanggil di akhir renderAll() -> menyamakan URL tanpa menambah entri history (mis. setelah simpan data) */
+function syncUrl(){
+  const path = currentPath();
+  if(location.pathname !== path){
+    history.replaceState(null,'',path + location.search + location.hash);
+  }
+}
+let deepLinkHandled = false;
+/* Cocokkan path URL saat ini (mitra/sub-program/tab) ke data yang sedang tersedia.
+   Dipanggil saat load pertama (data demo) dan lagi setelah data asli Firestore masuk,
+   supaya deep-link tetap berfungsi walau data baru datang belakangan (async). */
+function restoreFromUrl(){
+  if(deepLinkHandled) return;
+  let path = location.pathname;
+  if(BASE_PATH!=='/' && path.indexOf(BASE_PATH)===0) path = path.slice(BASE_PATH.length);
+  path = path.replace(/^\/+/,'');
+  const segs = path.split('/').filter(Boolean);
+  if(!segs.length){ selectedMitraId = null; deepLinkHandled = true; return; }
+  const [mSlug, spSlug, stageSlug] = segs;
+  const m = mitraList.find(x=>slugify(x.nama)===mSlug);
+  if(!m) return; // data belum termuat / slug tidak cocok — coba lagi nanti saat data realtime masuk
+  selectedMitraId = m.id;
+  const sp = spSlug ? m.subProgram.find(p=>slugify(p.nama)===spSlug) : null;
+  activeSubProgramId = sp ? sp.id : (m.subProgram[0] ? m.subProgram[0].id : null);
+  activeStage = (stageSlug && ALL_STAGES.some(s=>s.key===stageSlug)) ? stageSlug : 'dana';
+  deepLinkHandled = true;
+}
+window.addEventListener('popstate', () => {
+  deepLinkHandled = false; // izinkan path baru (mis. tombol Back/Forward) dicocokkan ulang
+  restoreFromUrl();
+  renderAll();
+});
+
 const fmtRp = n => 'Rp ' + (n||0).toLocaleString('id-ID');
 const fmtDate = d => d ? new Date(d).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 const fmtDateFull = d => d ? new Date(d+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '—';
@@ -821,6 +895,7 @@ window.addEventListener('fb-ready', () => {
       if(unsubscribeMitra) unsubscribeMitra();
       unsubscribeMitra = fb.onSnapshot(fb.collection(db,'mitra'), snapshot => {
         mitraList = snapshot.docs.map(d => normalizeMitra({ id:d.id, ...d.data() }));
+        restoreFromUrl();
         ensureSelectionValid();
         connDot.classList.remove('demo'); connDot.classList.add('live');
         connLabel.textContent = 'Realtime aktif';
@@ -975,10 +1050,12 @@ function selectMitra(id){
   const m = currentMitra();
   activeSubProgramId = (m && m.subProgram.length) ? m.subProgram[0].id : null;
   activeStage = 'dana';
+  navigateUrl();
   renderAll();
 }
 function renderOverview(){
   selectedMitraId = null;
+  navigateUrl();
   renderAll();
 }
 
@@ -1040,6 +1117,7 @@ function renderProgramTabs(){
 }
 function setSubProgram(id){
   activeSubProgramId = id;
+  navigateUrl();
   renderProgramTabs(); renderStageRail(); renderContent();
 }
 function openSubProgramModal(mid){
@@ -1111,7 +1189,7 @@ function renderStageRail(){
       </div>`;
   }).join('');
 }
-function setStage(key){ activeStage=key; renderContent(); renderStageRail(); }
+function setStage(key){ activeStage=key; navigateUrl(); renderContent(); renderStageRail(); }
 
 /* ------------------------------ CONTENT -------------------------------- */
 function renderContent(){
@@ -1807,7 +1885,9 @@ function renderAll(){
     document.getElementById('stageRail').innerHTML = '';
     renderOverviewContent();
   }
+  syncUrl();
 }
+restoreFromUrl();
 renderAll();
 </script>
 </body>
