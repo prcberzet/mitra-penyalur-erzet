@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Menara Kemitraan — Monitoring Mitra</title>
+<title>Mitra Penyalur Erzet — Monitoring Mitra</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
@@ -260,11 +260,12 @@
     padding:6px 10px 6px 14px; font-size:12.5px; font-weight:600; color:var(--ink-soft);
   }
   .program-tab.active{background:var(--brand-soft); border-color:var(--brand); color:var(--brand);}
-  .program-tab-del{
+  .program-tab-del, .program-tab-edit{
     font-size:10px; color:var(--ink-faint); border-radius:50%; width:16px; height:16px;
     display:inline-flex; align-items:center; justify-content:center;
   }
   .program-tab-del:hover{background:var(--crit-soft); color:var(--crit);}
+  .program-tab-edit:hover{background:var(--brand-soft); color:var(--brand);}
   .program-tab-add{
     border:1px dashed var(--line); background:transparent; border-radius:20px;
     padding:6px 14px; font-size:12.5px; font-weight:600; color:var(--ink-soft);
@@ -391,24 +392,35 @@
     font-family:inherit; background:var(--surface); color:var(--ink);
   }
 
-  /* Overview grid of all mitra */
-  .overview-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;}
+  /* Overview grid of all mitra — dibuat lega karena jumlah mitra tidak terlalu banyak */
+  .overview-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(360px,1fr)); gap:18px;}
   .overview-card{
     background:var(--surface); border:1px solid var(--line); border-radius:var(--radius);
-    padding:16px; cursor:pointer; transition:border-color .12s, transform .12s;
+    padding:20px; cursor:pointer; transition:border-color .12s, transform .12s;
   }
   .overview-card:hover{border-color:var(--brand); transform:translateY(-1px);}
-  .overview-card-top{display:flex; gap:10px; align-items:flex-start; margin-bottom:10px;}
+  .overview-card-top{display:flex; gap:12px; align-items:flex-start; margin-bottom:12px;}
   .overview-logo{
-    width:38px; height:38px; border-radius:8px; object-fit:cover;
+    width:46px; height:46px; border-radius:9px; object-fit:cover;
     border:1px solid var(--line); background:var(--bg); flex-shrink:0;
   }
-  .overview-card h4{font-size:14px; font-weight:600; margin-bottom:2px;}
-  .overview-card .pic{font-size:11.5px; color:var(--ink-soft); margin-bottom:10px;}
+  .overview-card-head{flex:1; min-width:0;}
+  .overview-card h4{font-size:15.5px; font-weight:600; margin-bottom:2px;}
+  .overview-card .pic{font-size:12px; color:var(--ink-soft);}
   .overview-card .ringkasan-snip{
-    font-size:11.5px; color:var(--ink-soft); line-height:1.5; margin-bottom:10px;
+    font-size:12px; color:var(--ink-soft); line-height:1.55; margin-bottom:14px;
     display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden;
   }
+  .overview-stats{
+    display:grid; grid-template-columns:repeat(3,1fr); gap:10px;
+    background:var(--bg); border-radius:9px; padding:12px 10px;
+  }
+  .overview-stats .os-item{min-width:0;}
+  .overview-stats .os-label{font-size:10px; color:var(--ink-faint); font-weight:600; text-transform:uppercase; letter-spacing:.3px;}
+  .overview-stats .os-value{font-family:var(--font-mono); font-size:14px; font-weight:600; margin-top:4px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .overview-stats .os-value.os-warn{color:var(--warn);}
+  .overview-stats .os-value.os-crit{color:var(--crit);}
+  .overview-stats .os-sub{font-size:10px; color:var(--ink-faint); margin-top:2px;}
 
   /* Modal */
   .modal-overlay{
@@ -469,7 +481,7 @@
 
 <div id="loginOverlay">
   <div class="login-box">
-    <div class="brand-mark"><span class="dot"></span>Menara Kemitraan</div>
+    <div class="brand-mark"><span class="dot"></span>Mitra Penyalur Erzet</div>
     <h2>Masuk ke Dashboard</h2>
     <div class="sub">Silahkan login menggunakan email dan password</div>
     <form id="loginForm">
@@ -483,7 +495,7 @@
 
 <aside id="sidebar">
   <div class="brand" onclick="renderOverview()" title="Kembali ke Ringkasan Semua Mitra">
-    <div class="brand-mark"><span class="dot"></span>Menara Kemitraan</div>
+    <div class="brand-mark"><span class="dot"></span>Mitra Penyalur Erzet</div>
     <div class="brand-sub">Monitoring Mitra Program</div>
   </div>
   <div class="sidebar-tools">
@@ -622,7 +634,7 @@
 function defaultSubProgram(nama){
   return {
     id:'sp'+Date.now()+Math.floor(Math.random()*1000),
-    nama: nama||'Program Utama', deskripsi:'',
+    nama: nama||'Program Utama', deskripsi:'', jumlahPeserta:0,
     dana:[], aktivitasHarian:[], aktivitasMingguan:[], laporanBulanan:[],
     evaluasi:{raport:[],jadwal:[],catatan:[]}
   };
@@ -647,7 +659,7 @@ let mitraList = [
     ],
     subProgram:[
       {
-        id:'sp1', nama:'Pelatihan Guru SD', deskripsi:'Pelatihan & pendampingan guru kelas 1–6',
+        id:'sp1', nama:'Pelatihan Guru SD', deskripsi:'Pelatihan & pendampingan guru kelas 1–6', jumlahPeserta:240,
         dana:[
           {bulan:'Mei 2026', rapb:60000000, pencairan:60000000, realisasi:58000000, saldo:2000000},
           {bulan:'Juni 2026', rapb:60000000, pencairan:60000000, realisasi:55000000, saldo:5000000},
@@ -672,7 +684,7 @@ let mitraList = [
         }
       },
       {
-        id:'sp2', nama:'Beasiswa Siswa Berprestasi', deskripsi:'Bantuan biaya pendidikan siswa kurang mampu berprestasi',
+        id:'sp2', nama:'Beasiswa Siswa Berprestasi', deskripsi:'Bantuan biaya pendidikan siswa kurang mampu berprestasi', jumlahPeserta:45,
         dana:[
           {bulan:'Juli 2026', rapb:20000000, pencairan:20000000, realisasi:12000000, saldo:8000000},
         ],
@@ -700,7 +712,7 @@ let mitraList = [
     ],
     subProgram:[
       {
-        id:'sp3', nama:'Penanaman & Edukasi Lingkungan', deskripsi:'',
+        id:'sp3', nama:'Penanaman & Edukasi Lingkungan', deskripsi:'', jumlahPeserta:120,
         dana:[
           {bulan:'Juni 2026', rapb:35000000, pencairan:20000000, realisasi:18000000, saldo:2000000},
           {bulan:'Juli 2026', rapb:35000000, pencairan:0, realisasi:0, saldo:0},
@@ -747,6 +759,7 @@ function normalizeMitra(m){
   m.legalitas = m.legalitas || [];
   m.subProgram = (m.subProgram && m.subProgram.length) ? m.subProgram : [defaultSubProgram()];
   m.subProgram.forEach(sp=>{
+    sp.jumlahPeserta = sp.jumlahPeserta || 0;
     sp.dana = sp.dana || [];
     sp.aktivitasHarian = sp.aktivitasHarian || [];
     sp.aktivitasMingguan = sp.aktivitasMingguan || [];
@@ -889,6 +902,28 @@ const statusLabel = {ok:'Aman', warn:'Perlu Perhatian', crit:'Kritis'};
 const statusPillClass = {ok:'pill-ok', warn:'pill-warn', crit:'pill-crit'};
 const statusChipClass = {ok:'chip-ok', warn:'chip-warn', crit:'chip-crit'};
 
+/* --------------- RINGKASAN AGREGAT (untuk kartu Ringkasan Semua Mitra) -------------- */
+function mitraDanaSummary(m){
+  let rapb=0, realisasi=0;
+  m.subProgram.forEach(sp=> sp.dana.forEach(d=>{ rapb+=d.rapb||0; realisasi+=d.realisasi||0; }));
+  const pct = rapb ? Math.round(realisasi/rapb*100) : null;
+  return {rapb, realisasi, pct};
+}
+function mitraPesertaTotal(m){
+  return m.subProgram.reduce((sum,sp)=> sum+(sp.jumlahPeserta||0), 0);
+}
+function mitraLaporanSummary(m){
+  let done=0, total=0;
+  m.subProgram.forEach(sp=>{
+    total += 4;
+    if(sp.laporanBulanan.length){
+      const last = sp.laporanBulanan[sp.laporanBulanan.length-1];
+      done += [last.penerima,last.keuangan,last.dokumentasi,last.tertulis].filter(Boolean).length;
+    }
+  });
+  return {done, total};
+}
+
 /* Thumbnail logo mitra: pakai link yang diisi staf, kalau kosong/gagal dimuat
    otomatis diganti placeholder berisi inisial nama mitra. */
 function logoFallback(nama){
@@ -995,6 +1030,7 @@ function renderProgramTabs(){
     ${m.subProgram.map(p=>`
       <div class="program-tab ${sp && p.id===sp.id?'active':''}" onclick="setSubProgram('${p.id}')">
         <span>${p.nama}</span>
+        <span class="program-tab-edit" onclick="event.stopPropagation(); openEditSubProgramModal('${m.id}','${p.id}')" title="Edit sub program">✎</span>
         ${m.subProgram.length>1?`<span class="program-tab-del" onclick="event.stopPropagation(); hapusSubProgram('${m.id}','${p.id}')" title="Hapus sub program">✕</span>`:''}
       </div>`).join('')}
     <button class="program-tab-add" onclick="openSubProgramModal('${m.id}')">+ Sub Program</button>`;
@@ -1008,6 +1044,7 @@ function openSubProgramModal(mid){
     <h3>Tambah Sub Program</h3>
     <div class="field"><label>Nama Sub Program</label><input id="f_spnama" placeholder="Contoh: Pelatihan Guru SD"></div>
     <div class="field"><label>Deskripsi (opsional)</label><textarea id="f_spdesk" placeholder="Deskripsi singkat sub program"></textarea></div>
+    <div class="field"><label>Jumlah Peserta Program</label><input id="f_sppeserta" type="number" min="0" placeholder="0"></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanSubProgram('${mid}')">Simpan</button></div>
   `);
 }
@@ -1017,9 +1054,32 @@ function simpanSubProgram(mid){
   if(!nama) return;
   const sp = defaultSubProgram(nama);
   sp.deskripsi = document.getElementById('f_spdesk').value||'';
+  sp.jumlahPeserta = parseInt(document.getElementById('f_sppeserta').value)||0;
   m.subProgram.push(sp);
   activeSubProgramId = sp.id;
   activeStage = 'dana';
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function openEditSubProgramModal(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  openModal(`
+    <h3>Edit Sub Program</h3>
+    <div class="field"><label>Nama Sub Program</label><input id="f_espnama" value="${escAttr(sp.nama)}"></div>
+    <div class="field"><label>Deskripsi (opsional)</label><textarea id="f_espdesk">${escHtml(sp.deskripsi)}</textarea></div>
+    <div class="field"><label>Jumlah Peserta Program</label><input id="f_esppeserta" type="number" min="0" value="${sp.jumlahPeserta||0}"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditSubProgram('${mid}','${spId}')">Simpan Perubahan</button></div>
+  `);
+}
+function simpanEditSubProgram(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const nama = document.getElementById('f_espnama').value.trim();
+  if(!nama) return;
+  sp.nama = nama;
+  sp.deskripsi = document.getElementById('f_espdesk').value||'';
+  sp.jumlahPeserta = parseInt(document.getElementById('f_esppeserta').value)||0;
   persistMitra(m);
   closeModal(); renderAll();
 }
@@ -1501,17 +1561,38 @@ function renderOverviewContent(){
       <div class="overview-grid">
         ${mitraList.map(m=>{
           const os = overallStatus(m);
+          const dana = mitraDanaSummary(m);
+          const peserta = mitraPesertaTotal(m);
+          const lap = mitraLaporanSummary(m);
+          const lapStatus = lap.total===0 ? 'crit' : (lap.done===lap.total ? 'ok' : (lap.done>0 ? 'warn':'crit'));
           return `<div class="overview-card" onclick="selectMitra('${m.id}')">
             <div class="overview-card-top">
               ${logoImg(m,'overview-logo')}
-              <div>
+              <div class="overview-card-head">
                 <h4>${m.nama}</h4>
                 <div class="pic">PIC: ${m.pic} · ${m.subProgram.length} sub program</div>
               </div>
+              <span class="status-pill ${statusPillClass[os]}">${statusLabel[os]}</span>
             </div>
             ${m.ringkasan?`<div class="ringkasan-snip">${m.ringkasan}</div>`:''}
-            <span class="status-pill ${statusPillClass[os]}">${statusLabel[os]}</span>
-            <div class="stage-rail-mini" style="margin-top:12px;">
+            <div class="overview-stats">
+              <div class="os-item">
+                <div class="os-label">Dana Terealisasi</div>
+                <div class="os-value">${fmtRp(dana.realisasi)}</div>
+                <div class="os-sub">${dana.pct===null?'Belum ada data':`${dana.pct}% dari RAPB ${fmtRp(dana.rapb)}`}</div>
+              </div>
+              <div class="os-item">
+                <div class="os-label">Peserta Program</div>
+                <div class="os-value">${peserta.toLocaleString('id-ID')}</div>
+                <div class="os-sub">orang</div>
+              </div>
+              <div class="os-item">
+                <div class="os-label">Laporan Bulanan</div>
+                <div class="os-value os-${lapStatus}">${lap.done}/${lap.total}</div>
+                <div class="os-sub">item terakhir lengkap</div>
+              </div>
+            </div>
+            <div class="stage-rail-mini" style="margin-top:14px;">
               ${ALL_STAGES.map(s=>{const st=stageStatusForMitra(m,s.key); return `<span class="on ${st==='ok'?'':st}" style="background:${st==='ok'?'#2E8B57':st==='warn'?'#C7862B':'#C0473F'}"></span>`;}).join('')}
             </div>
           </div>`;
