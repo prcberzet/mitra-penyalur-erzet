@@ -429,6 +429,28 @@
     font-size:13px; font-family:inherit; color:var(--ink);
   }
   .field textarea{resize:vertical; min-height:64px;}
+
+  /* ---------- Login ---------- */
+  #loginOverlay{
+    position:fixed; inset:0; z-index:200;
+    background:var(--navy);
+    display:flex; align-items:center; justify-content:center;
+    padding:20px;
+  }
+  .login-box{
+    width:100%; max-width:340px;
+    background:var(--surface);
+    border-radius:var(--radius);
+    padding:28px 26px;
+    box-shadow:0 20px 50px rgba(0,0,0,0.4);
+  }
+  .login-box .brand-mark{color:var(--ink); margin-bottom:14px;}
+  .login-box h2{font-family:var(--font-display); font-size:18px; margin-bottom:4px;}
+  .login-box .sub{font-size:12.5px; color:var(--ink-soft); margin-bottom:20px; line-height:1.5;}
+  .login-error{font-size:12px; color:var(--crit); margin:-6px 0 12px; min-height:14px;}
+  .login-box .btn-primary{width:100%; padding:10px; font-size:13px; margin-top:4px;}
+  .logout-link{background:transparent; border:none; color:#8D96AC; font-size:11px; text-decoration:underline; padding:0;}
+  .logout-link:hover{color:#EDEFF4;}
   .modal-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:18px;}
 
   .tag-note{
@@ -445,6 +467,20 @@
 </head>
 <body>
 
+<div id="loginOverlay">
+  <div class="login-box">
+    <div class="brand-mark"><span class="dot"></span>Menara Kemitraan</div>
+    <h2>Masuk ke Dashboard</h2>
+    <div class="sub">Gunakan akun email &amp; password yang sudah didaftarkan di Firebase Authentication.</div>
+    <form id="loginForm">
+      <div class="field"><label>Email</label><input id="loginEmail" type="email" required autocomplete="username"></div>
+      <div class="field"><label>Password</label><input id="loginPassword" type="password" required autocomplete="current-password"></div>
+      <div class="login-error" id="loginError"></div>
+      <button type="submit" class="btn btn-primary" id="loginBtn">Masuk</button>
+    </form>
+  </div>
+</div>
+
 <aside id="sidebar">
   <div class="brand" onclick="renderOverview()" title="Kembali ke Ringkasan Semua Mitra">
     <div class="brand-mark"><span class="dot"></span>Menara Kemitraan</div>
@@ -460,7 +496,10 @@
   <div id="mitraList"></div>
   <div class="sidebar-foot">
     <span id="mitraCountFoot">0 mitra</span>
-    <span class="conn-status" id="connStatus"><span class="conn-dot" id="connDot"></span><span id="connLabel">Memuat...</span></span>
+    <span style="display:flex; align-items:center; gap:10px;">
+      <span class="conn-status" id="connStatus"><span class="conn-dot" id="connDot"></span><span id="connLabel">Memuat...</span></span>
+      <button id="logoutBtn" class="logout-link" type="button" title="Keluar dari akun">Keluar</button>
+    </span>
   </div>
 </aside>
 
@@ -489,6 +528,9 @@
   import {
     getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot
   } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+  import {
+    getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-auth.js";
 
   const firebaseConfig = {
   apiKey: "AIzaSyCnHZtaxAcIIOTfVryFLvV0FTXqXBEtZNU",
@@ -505,7 +547,8 @@
     try{
       const app = initializeApp(firebaseConfig);
       const db = getFirestore(app);
-      window.__fb = { db, collection, doc, setDoc, deleteDoc, onSnapshot };
+      const auth = getAuth(app);
+      window.__fb = { db, auth, collection, doc, setDoc, deleteDoc, onSnapshot };
     }catch(e){
       console.error('Gagal inisialisasi Firebase:', e);
       window.__fb = null;
@@ -514,6 +557,48 @@
     window.__fb = null;
   }
   window.dispatchEvent(new Event('fb-ready'));
+
+  /* ------- Login form wiring (perlu scope module utk signInWithEmailAndPassword) ------- */
+  function pesanErrorLogin(code){
+    if(['auth/invalid-credential','auth/wrong-password','auth/user-not-found'].includes(code)) return 'Email atau password salah.';
+    if(code==='auth/invalid-email') return 'Format email tidak valid.';
+    if(code==='auth/too-many-requests') return 'Terlalu banyak percobaan gagal, coba lagi beberapa saat.';
+    if(code==='auth/network-request-failed') return 'Gagal terhubung ke server, cek koneksi internet.';
+    return 'Gagal login. Coba lagi.';
+  }
+
+  window.addEventListener('fb-ready', () => {
+    const fb = window.__fb;
+    if(!fb || !fb.auth) return; // mode demo (belum dikonfigurasi): tidak butuh login
+
+    const auth = fb.auth;
+    const loginForm = document.getElementById('loginForm');
+    const loginError = document.getElementById('loginError');
+    const loginBtn = document.getElementById('loginBtn');
+
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = document.getElementById('loginEmail').value.trim();
+      const password = document.getElementById('loginPassword').value;
+      loginError.textContent = '';
+      loginBtn.disabled = true; loginBtn.textContent = 'Memproses...';
+      try{
+        await signInWithEmailAndPassword(auth, email, password);
+      }catch(err){
+        console.error('Login gagal:', err);
+        loginError.textContent = pesanErrorLogin(err.code);
+      }finally{
+        loginBtn.disabled = false; loginBtn.textContent = 'Masuk';
+      }
+    });
+
+    document.getElementById('logoutBtn').addEventListener('click', () => signOut(auth));
+
+    onAuthStateChanged(auth, user => {
+      window.__fbUser = user;
+      window.dispatchEvent(new Event('auth-changed'));
+    });
+  });
 </script>
 
 <script>
@@ -695,27 +780,49 @@ function newMitraId(){
   return 'm'+Date.now();
 }
 
+let unsubscribeMitra = null;
+
 window.addEventListener('fb-ready', () => {
   const fb = window.__fb;
   const connDot = document.getElementById('connDot');
   const connLabel = document.getElementById('connLabel');
-  if(fb && fb.db){
-    db = fb.db;
-    fb.onSnapshot(fb.collection(db,'mitra'), snapshot => {
-      mitraList = snapshot.docs.map(d => normalizeMitra({ id:d.id, ...d.data() }));
-      ensureSelectionValid();
-      connDot.classList.remove('demo'); connDot.classList.add('live');
-      connLabel.textContent = 'Realtime aktif';
-      renderAll();
-    }, err => {
-      console.error('Gagal memuat data realtime:', err);
-      connDot.classList.remove('live'); connDot.classList.add('demo');
-      connLabel.textContent = 'Koneksi gagal (mode lokal)';
-    });
-  } else {
+  const loginOverlay = document.getElementById('loginOverlay');
+
+  if(!fb || !fb.db || !fb.auth){
+    // Belum dikonfigurasi (apiKey masih GANTI_...): jalan mode demo lokal, tanpa login
+    loginOverlay.style.display = 'none';
     connDot.classList.add('demo');
     connLabel.textContent = 'Mode demo (lokal)';
+    return;
   }
+
+  db = fb.db;
+
+  window.addEventListener('auth-changed', () => {
+    const user = window.__fbUser;
+    if(user){
+      loginOverlay.style.display = 'none';
+      if(unsubscribeMitra) unsubscribeMitra();
+      unsubscribeMitra = fb.onSnapshot(fb.collection(db,'mitra'), snapshot => {
+        mitraList = snapshot.docs.map(d => normalizeMitra({ id:d.id, ...d.data() }));
+        ensureSelectionValid();
+        connDot.classList.remove('demo'); connDot.classList.add('live');
+        connLabel.textContent = 'Realtime aktif';
+        renderAll();
+      }, err => {
+        console.error('Gagal memuat data realtime:', err);
+        connDot.classList.remove('live'); connDot.classList.add('demo');
+        connLabel.textContent = 'Koneksi gagal (mode lokal)';
+      });
+    } else {
+      if(unsubscribeMitra){ unsubscribeMitra(); unsubscribeMitra = null; }
+      connDot.classList.remove('live'); connDot.classList.add('demo');
+      connLabel.textContent = 'Belum login';
+      loginOverlay.style.display = 'flex';
+      document.getElementById('loginEmail').value = '';
+      document.getElementById('loginPassword').value = '';
+    }
+  });
 });
 
 /* ---------------------------- STATUS ENGINE ---------------------------- */
