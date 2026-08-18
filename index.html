@@ -61,7 +61,10 @@
   .brand{
     padding:22px 20px 16px;
     border-bottom:1px solid rgba(255,255,255,0.08);
+    cursor:pointer;
+    transition:opacity .15s;
   }
+  .brand:hover{opacity:.85;}
   .brand-mark{
     font-family:var(--font-display);
     font-weight:700;
@@ -171,8 +174,12 @@
     border-top:1px solid rgba(255,255,255,0.08);
     font-size:11px;
     color:#6E7690;
-    display:flex; justify-content:space-between;
+    display:flex; justify-content:space-between; align-items:center;
   }
+  .conn-status{display:flex; align-items:center; gap:6px;}
+  .conn-dot{width:7px;height:7px;border-radius:50%; background:#6E7690; flex-shrink:0;}
+  .conn-dot.live{background:#5FBF9A;}
+  .conn-dot.demo{background:#C7862B;}
 
   /* ---------- Main ---------- */
   #main{
@@ -209,7 +216,7 @@
     font-size:12.5px; color:var(--ink-soft); margin-top:9px;
     max-width:640px; line-height:1.55;
   }
-  .topbar-actions{display:flex; gap:8px;}
+  .topbar-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;}
   .btn{
     border:1px solid var(--line);
     background:var(--surface);
@@ -219,6 +226,7 @@
     font-weight:600;
     color:var(--ink);
     transition:all .12s;
+    white-space:nowrap;
   }
   .btn:hover{border-color:var(--brand); color:var(--brand);}
   .btn-primary{background:var(--brand); color:#fff; border-color:var(--brand);}
@@ -226,6 +234,42 @@
   .btn-danger-ghost{color:var(--crit); border-color:var(--crit-soft);}
   .btn-danger-ghost:hover{background:var(--crit-soft); border-color:var(--crit);}
   .btn-sm{padding:5px 10px; font-size:11.5px;}
+
+  .status-dot{
+    width:7px; height:7px; border-radius:50%;
+    display:inline-block; margin-left:7px; position:relative; top:-1px;
+    background:var(--ink-faint);
+  }
+  .status-dot.ok{background:var(--ok);}
+  .status-dot.warn{background:var(--warn);}
+  .status-dot.crit{background:var(--crit);}
+
+  /* Sub program tabs */
+  #programTabs{
+    background:var(--surface);
+    border-bottom:1px solid var(--line);
+    padding:10px 32px;
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .program-tab{
+    display:flex; align-items:center; gap:7px;
+    background:var(--bg); border:1px solid var(--line); border-radius:20px;
+    padding:6px 10px 6px 14px; font-size:12.5px; font-weight:600; color:var(--ink-soft);
+  }
+  .program-tab.active{background:var(--brand-soft); border-color:var(--brand); color:var(--brand);}
+  .program-tab-del{
+    font-size:10px; color:var(--ink-faint); border-radius:50%; width:16px; height:16px;
+    display:inline-flex; align-items:center; justify-content:center;
+  }
+  .program-tab-del:hover{background:var(--crit-soft); color:var(--crit);}
+  .program-tab-add{
+    border:1px dashed var(--line); background:transparent; border-radius:20px;
+    padding:6px 14px; font-size:12.5px; font-weight:600; color:var(--ink-soft);
+  }
+  .program-tab-add:hover{border-color:var(--brand); color:var(--brand);}
 
   /* Stage rail (main) */
   #stageRail{
@@ -262,18 +306,6 @@
   .stage-node .dot.warn{background:var(--warn);}
   .stage-node .dot.crit{background:var(--crit);}
 
-  .status-dot{
-    width:7px; height:7px; border-radius:50%;
-    display:inline-block; margin-left:7px; position:relative; top:-1px;
-    background:var(--ink-faint);
-  }
-  .status-dot.ok{background:var(--ok);}
-  .status-dot.warn{background:var(--warn);}
-  .status-dot.crit{background:var(--crit);}
-
-  .num-plain{font-family:var(--font-body); font-variant-numeric:tabular-nums;}
-  .stat-card .value.plain{font-family:var(--font-body);}
-
   #content{
     flex:1;
     overflow-y:auto;
@@ -309,6 +341,7 @@
   }
   tbody tr:last-child td{border-bottom:none;}
   .mono{font-family:var(--font-mono); font-variant-numeric:tabular-nums;}
+  .num-plain{font-family:var(--font-body); font-variant-numeric:tabular-nums;}
   .num-cell{text-align:right;}
 
   .chip{
@@ -342,12 +375,8 @@
   }
   .stat-card .label{font-size:11.5px; color:var(--ink-soft); font-weight:600; text-transform:uppercase; letter-spacing:.3px;}
   .stat-card .value{font-family:var(--font-mono); font-size:24px; font-weight:600; margin-top:6px;}
+  .stat-card .value.plain{font-family:var(--font-body);}
   .stat-card .sub{font-size:11.5px; color:var(--ink-faint); margin-top:3px;}
-
-  .progress-track{
-    height:6px; background:var(--bg); border-radius:6px; overflow:hidden; margin-top:8px;
-  }
-  .progress-fill{height:100%; background:var(--brand);}
 
   .legalitas-item{
     display:flex; align-items:center; justify-content:space-between;
@@ -417,7 +446,7 @@
 <body>
 
 <aside id="sidebar">
-  <div class="brand">
+  <div class="brand" onclick="renderOverview()" title="Kembali ke Ringkasan Semua Mitra">
     <div class="brand-mark"><span class="dot"></span>Menara Kemitraan</div>
     <div class="brand-sub">Monitoring Mitra Program</div>
   </div>
@@ -431,12 +460,13 @@
   <div id="mitraList"></div>
   <div class="sidebar-foot">
     <span id="mitraCountFoot">0 mitra</span>
-    <span id="todayLabel"></span>
+    <span class="conn-status" id="connStatus"><span class="conn-dot" id="connDot"></span><span id="connLabel">Memuat...</span></span>
   </div>
 </aside>
 
 <main id="main">
   <div id="topbar"></div>
+  <div id="programTabs"></div>
   <div id="stageRail"></div>
   <div id="content"></div>
 </main>
@@ -446,21 +476,72 @@
   <div class="modal" id="modalBody"></div>
 </div>
 
+<!-- =========================================================================
+     FIREBASE BOOTSTRAP (realtime, lintas perangkat)
+     Isi firebaseConfig di bawah dengan konfigurasi project Firebase Anda
+     sendiri (Firebase Console → Project Settings → Web App). Selama nilai
+     apiKey masih diawali "GANTI_", aplikasi otomatis berjalan dalam
+     "Mode Demo (lokal)" — tetap bisa dicoba penuh, hanya saja data tidak
+     tersimpan permanen / tidak sinkron ke perangkat lain.
+     ========================================================================= -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+  import {
+    getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot
+  } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "GANTI_DENGAN_API_KEY_ANDA",
+    authDomain: "GANTI_DENGAN_AUTH_DOMAIN",
+    projectId: "GANTI_DENGAN_PROJECT_ID",
+    storageBucket: "GANTI_DENGAN_STORAGE_BUCKET",
+    messagingSenderId: "GANTI_DENGAN_SENDER_ID",
+    appId: "GANTI_DENGAN_APP_ID"
+  };
+
+  const isConfigured = firebaseConfig.apiKey && !firebaseConfig.apiKey.startsWith('GANTI_');
+
+  if(isConfigured){
+    try{
+      const app = initializeApp(firebaseConfig);
+      const db = getFirestore(app);
+      window.__fb = { db, collection, doc, setDoc, deleteDoc, onSnapshot };
+    }catch(e){
+      console.error('Gagal inisialisasi Firebase:', e);
+      window.__fb = null;
+    }
+  } else {
+    window.__fb = null;
+  }
+  window.dispatchEvent(new Event('fb-ready'));
+</script>
+
 <script>
 /* =========================================================================
    DATA MODEL
-   Struktur di bawah ini dibuat agar 1:1 dengan koleksi Firestore yang
-   disarankan (lihat PANDUAN-SETUP.md):
-     mitra/{mitraId}
-       └─ legalitas: []            -> field pada dokumen mitra (array map)
-       └─ dana: []                 -> subkoleksi "dana" (1 dokumen / bulan)
-       └─ aktivitasHarian: []      -> subkoleksi "aktivitas_harian"
-       └─ aktivitasMingguan: []    -> subkoleksi "aktivitas_mingguan"
-       └─ laporanBulanan: []       -> subkoleksi "laporan_bulanan"
-       └─ evaluasi.raport/jadwal/catatan -> subkoleksi "evaluasi_*"
-   Field "link" merujuk ke URL Google Drive (file disimpan di Drive,
-   Firestore hanya menyimpan tautannya).
+   mitra
+     ├─ nama, direktur, pic, alamat, kontak, mulai, ringkasan, logo
+     ├─ legalitas: []              ← kelengkapan dokumen, lingkup seluruh mitra
+     └─ subProgram: [              ← satu mitra bisa punya beberapa sub program
+          { id, nama, deskripsi,
+            dana: [], aktivitasHarian: [], aktivitasMingguan: [],
+            laporanBulanan: [], evaluasi: { raport: [], jadwal: [], catatan: [] }
+          }
+        ]
+   Saat Firebase aktif, satu mitra = satu dokumen Firestore (koleksi "mitra"),
+   berisi seluruh struktur di atas sebagai field bersarang. Pendekatan ini
+   dipilih agar setiap perubahan (tambah dana, ubah status, dsb) cukup satu
+   kali "setDoc" dan otomatis tersinkron ke semua perangkat lewat onSnapshot.
    ========================================================================= */
+
+function defaultSubProgram(nama){
+  return {
+    id:'sp'+Date.now()+Math.floor(Math.random()*1000),
+    nama: nama||'Program Utama', deskripsi:'',
+    dana:[], aktivitasHarian:[], aktivitasMingguan:[], laporanBulanan:[],
+    evaluasi:{raport:[],jadwal:[],catatan:[]}
+  };
+}
 
 let mitraList = [
   {
@@ -479,28 +560,42 @@ let mitraList = [
       {nama:'MoU', status:'ada', link:'https://drive.google.com/...', tanggal:'2026-01-12'},
       {nama:'Pakta Integritas', status:'ada', link:'https://drive.google.com/...', tanggal:'2026-01-12'},
     ],
-    dana:[
-      {bulan:'Mei 2026', rapb:60000000, pencairan:60000000, realisasi:58000000, saldo:2000000},
-      {bulan:'Juni 2026', rapb:60000000, pencairan:60000000, realisasi:55000000, saldo:5000000},
-      {bulan:'Juli 2026', rapb:60000000, pencairan:60000000, realisasi:21000000, saldo:39000000},
-    ],
-    aktivitasHarian:[
-      {tanggal:'2026-07-27', judul:'Rilis berita pelatihan guru tahap 3', link:'https://drive.google.com/...', status:'ada'},
-      {tanggal:'2026-07-24', judul:'Dokumentasi kunjungan lapangan', link:'https://drive.google.com/...', status:'ada'},
-    ],
-    aktivitasMingguan:[
-      {minggu:'Minggu ke-4 Juli 2026', tanggal:'2026-07-25', link:'https://drive.google.com/...', status:'ada'},
-      {minggu:'Minggu ke-3 Juli 2026', tanggal:'2026-07-18', link:'https://drive.google.com/...', status:'ada'},
-    ],
-    laporanBulanan:[
-      {bulan:'Juni 2026', penerima:true, keuangan:true, dokumentasi:true, tertulis:true},
-      {bulan:'Juli 2026', penerima:false, keuangan:false, dokumentasi:false, tertulis:false},
-    ],
-    evaluasi:{
-      raport:[{periode:'Semester 1 2026', skor:'A-', catatan:'Kinerja stabil, realisasi dana konsisten.'}],
-      jadwal:[{tanggal:'2026-08-05', agenda:'Evaluasi triwulan II', status:'terjadwal'}],
-      catatan:[{tanggal:'2026-06-30', ringkasan:'Disepakati percepatan penyerapan dana bulan Juli.'}]
-    }
+    subProgram:[
+      {
+        id:'sp1', nama:'Pelatihan Guru SD', deskripsi:'Pelatihan & pendampingan guru kelas 1–6',
+        dana:[
+          {bulan:'Mei 2026', rapb:60000000, pencairan:60000000, realisasi:58000000, saldo:2000000},
+          {bulan:'Juni 2026', rapb:60000000, pencairan:60000000, realisasi:55000000, saldo:5000000},
+          {bulan:'Juli 2026', rapb:60000000, pencairan:60000000, realisasi:21000000, saldo:39000000},
+        ],
+        aktivitasHarian:[
+          {tanggal:'2026-07-27', judul:'Rilis berita pelatihan guru tahap 3', link:'https://drive.google.com/...', status:'ada'},
+          {tanggal:'2026-07-24', judul:'Dokumentasi kunjungan lapangan', link:'https://drive.google.com/...', status:'ada'},
+        ],
+        aktivitasMingguan:[
+          {minggu:'Minggu ke-4 Juli 2026', tanggal:'2026-07-25', link:'https://drive.google.com/...', status:'ada'},
+          {minggu:'Minggu ke-3 Juli 2026', tanggal:'2026-07-18', link:'https://drive.google.com/...', status:'ada'},
+        ],
+        laporanBulanan:[
+          {bulan:'Juni 2026', penerima:true, keuangan:true, dokumentasi:true, tertulis:true},
+          {bulan:'Juli 2026', penerima:false, keuangan:false, dokumentasi:false, tertulis:false},
+        ],
+        evaluasi:{
+          raport:[{periode:'Semester 1 2026', skor:'A-', catatan:'Kinerja stabil, realisasi dana konsisten.'}],
+          jadwal:[{tanggal:'2026-08-05', agenda:'Evaluasi triwulan II', status:'terjadwal'}],
+          catatan:[{tanggal:'2026-06-30', ringkasan:'Disepakati percepatan penyerapan dana bulan Juli.'}]
+        }
+      },
+      {
+        id:'sp2', nama:'Beasiswa Siswa Berprestasi', deskripsi:'Bantuan biaya pendidikan siswa kurang mampu berprestasi',
+        dana:[
+          {bulan:'Juli 2026', rapb:20000000, pencairan:20000000, realisasi:12000000, saldo:8000000},
+        ],
+        aktivitasHarian:[], aktivitasMingguan:[],
+        laporanBulanan:[],
+        evaluasi:{raport:[],jadwal:[],catatan:[]}
+      }
+    ]
   },
   {
     id:'m2',
@@ -518,34 +613,38 @@ let mitraList = [
       {nama:'MoU', status:'proses', link:'', tanggal:''},
       {nama:'Pakta Integritas', status:'belum', link:'', tanggal:''},
     ],
-    dana:[
-      {bulan:'Juni 2026', rapb:35000000, pencairan:20000000, realisasi:18000000, saldo:2000000},
-      {bulan:'Juli 2026', rapb:35000000, pencairan:0, realisasi:0, saldo:0},
-    ],
-    aktivitasHarian:[
-      {tanggal:'2026-07-10', judul:'Dokumentasi penanaman pohon', link:'https://drive.google.com/...', status:'ada'},
-    ],
-    aktivitasMingguan:[
-      {minggu:'Minggu ke-2 Juli 2026', tanggal:'2026-07-11', link:'', status:'belum'},
-    ],
-    laporanBulanan:[
-      {bulan:'Juni 2026', penerima:true, keuangan:false, dokumentasi:true, tertulis:false},
-    ],
-    evaluasi:{
-      raport:[],
-      jadwal:[{tanggal:'2026-08-01', agenda:'Klarifikasi legalitas MoU', status:'terjadwal'}],
-      catatan:[]
-    }
+    subProgram:[
+      {
+        id:'sp3', nama:'Penanaman & Edukasi Lingkungan', deskripsi:'',
+        dana:[
+          {bulan:'Juni 2026', rapb:35000000, pencairan:20000000, realisasi:18000000, saldo:2000000},
+          {bulan:'Juli 2026', rapb:35000000, pencairan:0, realisasi:0, saldo:0},
+        ],
+        aktivitasHarian:[
+          {tanggal:'2026-07-10', judul:'Dokumentasi penanaman pohon', link:'https://drive.google.com/...', status:'ada'},
+        ],
+        aktivitasMingguan:[
+          {minggu:'Minggu ke-2 Juli 2026', tanggal:'2026-07-11', link:'', status:'belum'},
+        ],
+        laporanBulanan:[
+          {bulan:'Juni 2026', penerima:true, keuangan:false, dokumentasi:true, tertulis:false},
+        ],
+        evaluasi:{
+          raport:[],
+          jadwal:[{tanggal:'2026-08-01', agenda:'Klarifikasi legalitas MoU', status:'terjadwal'}],
+          catatan:[]
+        }
+      }
+    ]
   }
 ];
 
-let selectedMitraId = mitraList[0].id;
+/* ------------------------------- STATE ---------------------------------- */
+let selectedMitraId = null;      // null = halaman Ringkasan Semua Mitra (tampilan awal)
+let activeSubProgramId = null;
 let activeStage = 'dana';
+let db = null;                   // diisi setelah bootstrap Firebase selesai dicek
 
-/* ALL_STAGES: dipakai untuk menghitung status keseluruhan mitra & indikator
-   ringkas (sidebar, ringkasan semua mitra) — termasuk Pra.
-   TABS: dipakai untuk rel navigasi utama di halaman detail mitra — Pra sudah
-   dipindahkan jadi tombol tersendiri di topbar, jadi tidak muncul di sini. */
 const ALL_STAGES = [
   {key:'pra', label:'Pra'},
   {key:'dana', label:'Dana'},
@@ -558,6 +657,131 @@ const TABS = ALL_STAGES.filter(s=>s.key!=='pra');
 const fmtRp = n => 'Rp ' + (n||0).toLocaleString('id-ID');
 const fmtDate = d => d ? new Date(d).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) : '—';
 
+/* ---------------------------- REALTIME SYNC ----------------------------- */
+function normalizeMitra(m){
+  m.legalitas = m.legalitas || [];
+  m.subProgram = (m.subProgram && m.subProgram.length) ? m.subProgram : [defaultSubProgram()];
+  m.subProgram.forEach(sp=>{
+    sp.dana = sp.dana || [];
+    sp.aktivitasHarian = sp.aktivitasHarian || [];
+    sp.aktivitasMingguan = sp.aktivitasMingguan || [];
+    sp.laporanBulanan = sp.laporanBulanan || [];
+    sp.evaluasi = sp.evaluasi || {raport:[],jadwal:[],catatan:[]};
+  });
+  return m;
+}
+function ensureSelectionValid(){
+  if(selectedMitraId && !mitraList.find(m=>m.id===selectedMitraId)) selectedMitraId = null;
+  const m = currentMitra();
+  if(m && (!activeSubProgramId || !m.subProgram.find(p=>p.id===activeSubProgramId))){
+    activeSubProgramId = m.subProgram.length ? m.subProgram[0].id : null;
+  }
+}
+async function persistMitra(m){
+  if(!db) return; // Mode demo lokal: perubahan cukup disimpan di memori browser
+  const fb = window.__fb;
+  const { id, ...data } = m;
+  try{ await fb.setDoc(fb.doc(db,'mitra',id), data); }
+  catch(e){ console.error('Gagal menyimpan ke Firebase:', e); }
+}
+async function removeMitraRemote(id){
+  if(!db) return;
+  const fb = window.__fb;
+  try{ await fb.deleteDoc(fb.doc(db,'mitra',id)); }
+  catch(e){ console.error('Gagal menghapus di Firebase:', e); }
+}
+function newMitraId(){
+  if(db){ const fb = window.__fb; return fb.doc(fb.collection(db,'mitra')).id; }
+  return 'm'+Date.now();
+}
+
+window.addEventListener('fb-ready', () => {
+  const fb = window.__fb;
+  const connDot = document.getElementById('connDot');
+  const connLabel = document.getElementById('connLabel');
+  if(fb && fb.db){
+    db = fb.db;
+    fb.onSnapshot(fb.collection(db,'mitra'), snapshot => {
+      mitraList = snapshot.docs.map(d => normalizeMitra({ id:d.id, ...d.data() }));
+      ensureSelectionValid();
+      connDot.classList.remove('demo'); connDot.classList.add('live');
+      connLabel.textContent = 'Realtime aktif';
+      renderAll();
+    }, err => {
+      console.error('Gagal memuat data realtime:', err);
+      connDot.classList.remove('live'); connDot.classList.add('demo');
+      connLabel.textContent = 'Koneksi gagal (mode lokal)';
+    });
+  } else {
+    connDot.classList.add('demo');
+    connLabel.textContent = 'Mode demo (lokal)';
+  }
+});
+
+/* ---------------------------- STATUS ENGINE ---------------------------- */
+function statusPra(m){
+  const total = m.legalitas.length || 1;
+  const ada = m.legalitas.filter(d=>d.status==='ada').length;
+  const proses = m.legalitas.filter(d=>d.status==='proses').length;
+  if(ada===total) return 'ok';
+  if(ada+proses>=total || ada>0) return 'warn';
+  return 'crit';
+}
+function statusDana(sp){
+  if(!sp.dana.length) return 'crit';
+  const last = sp.dana[sp.dana.length-1];
+  if(last.pencairan===0) return 'crit';
+  const rasio = last.pencairan? last.realisasi/last.pencairan : 0;
+  if(rasio>=0.7) return 'ok';
+  if(rasio>=0.3) return 'warn';
+  return 'crit';
+}
+function statusAktivitas(sp){
+  const hasHarian = sp.aktivitasHarian.length>0;
+  const mingguOk = sp.aktivitasMingguan.length>0 && sp.aktivitasMingguan[0].status==='ada';
+  if(hasHarian && mingguOk) return 'ok';
+  if(hasHarian || mingguOk) return 'warn';
+  return 'crit';
+}
+function statusLaporan(sp){
+  if(!sp.laporanBulanan.length) return 'crit';
+  const last = sp.laporanBulanan[sp.laporanBulanan.length-1];
+  const items = [last.penerima,last.keuangan,last.dokumentasi,last.tertulis];
+  const done = items.filter(Boolean).length;
+  if(done===4) return 'ok';
+  if(done>=2) return 'warn';
+  return 'crit';
+}
+function statusEvaluasi(sp){
+  if(sp.evaluasi.raport.length>0) return 'ok';
+  if(sp.evaluasi.jadwal.length>0) return 'warn';
+  return 'crit';
+}
+function stageStatusForSubProgram(sp,key){
+  if(key==='dana') return statusDana(sp);
+  if(key==='aktivitas') return statusAktivitas(sp);
+  if(key==='laporan') return statusLaporan(sp);
+  if(key==='evaluasi') return statusEvaluasi(sp);
+}
+/* Status per tahap untuk 1 mitra = kondisi terburuk di antara seluruh sub program */
+function stageStatusForMitra(m,key){
+  if(key==='pra') return statusPra(m);
+  if(!m.subProgram.length) return 'crit';
+  const hasil = m.subProgram.map(sp=>stageStatusForSubProgram(sp,key));
+  if(hasil.includes('crit')) return 'crit';
+  if(hasil.includes('warn')) return 'warn';
+  return 'ok';
+}
+function overallStatus(m){
+  const all = ALL_STAGES.map(s=>stageStatusForMitra(m,s.key));
+  if(all.includes('crit')) return 'crit';
+  if(all.includes('warn')) return 'warn';
+  return 'ok';
+}
+const statusLabel = {ok:'Aman', warn:'Perlu Perhatian', crit:'Kritis'};
+const statusPillClass = {ok:'pill-ok', warn:'pill-warn', crit:'pill-crit'};
+const statusChipClass = {ok:'chip-ok', warn:'chip-warn', crit:'chip-crit'};
+
 /* Thumbnail logo mitra: pakai link yang diisi staf, kalau kosong/gagal dimuat
    otomatis diganti placeholder berisi inisial nama mitra. */
 function logoFallback(nama){
@@ -569,62 +793,8 @@ function logoImg(m,cls){
   const src = (m.logo && m.logo.trim()) ? m.logo.trim() : fallback;
   return `<img class="${cls}" src="${src}" alt="Logo ${m.nama}" onerror="this.onerror=null;this.src='${fallback}'">`;
 }
-
-/* ---------------------------- STATUS ENGINE ---------------------------- */
-function statusPra(m){
-  const total = m.legalitas.length || 1;
-  const ada = m.legalitas.filter(d=>d.status==='ada').length;
-  const proses = m.legalitas.filter(d=>d.status==='proses').length;
-  if(ada===total) return 'ok';
-  if(ada+proses>=total || ada>0) return 'warn';
-  return 'crit';
-}
-function statusDana(m){
-  if(!m.dana.length) return 'crit';
-  const last = m.dana[m.dana.length-1];
-  if(last.pencairan===0) return 'crit';
-  const rasio = last.pencairan? last.realisasi/last.pencairan : 0;
-  if(rasio>=0.7) return 'ok';
-  if(rasio>=0.3) return 'warn';
-  return 'crit';
-}
-function statusAktivitas(m){
-  const hasHarian = m.aktivitasHarian.length>0;
-  const mingguOk = m.aktivitasMingguan.length>0 && m.aktivitasMingguan[0].status==='ada';
-  if(hasHarian && mingguOk) return 'ok';
-  if(hasHarian || mingguOk) return 'warn';
-  return 'crit';
-}
-function statusLaporan(m){
-  if(!m.laporanBulanan.length) return 'crit';
-  const last = m.laporanBulanan[m.laporanBulanan.length-1];
-  const items = [last.penerima,last.keuangan,last.dokumentasi,last.tertulis];
-  const done = items.filter(Boolean).length;
-  if(done===4) return 'ok';
-  if(done>=2) return 'warn';
-  return 'crit';
-}
-function statusEvaluasi(m){
-  if(m.evaluasi.raport.length>0) return 'ok';
-  if(m.evaluasi.jadwal.length>0) return 'warn';
-  return 'crit';
-}
-function stageStatus(m,key){
-  if(key==='pra') return statusPra(m);
-  if(key==='dana') return statusDana(m);
-  if(key==='aktivitas') return statusAktivitas(m);
-  if(key==='laporan') return statusLaporan(m);
-  if(key==='evaluasi') return statusEvaluasi(m);
-}
-function overallStatus(m){
-  const all = ALL_STAGES.map(s=>stageStatus(m,s.key));
-  if(all.includes('crit')) return 'crit';
-  if(all.includes('warn')) return 'warn';
-  return 'ok';
-}
-const statusLabel = {ok:'Aman', warn:'Perlu Perhatian', crit:'Kritis'};
-const statusPillClass = {ok:'pill-ok', warn:'pill-warn', crit:'pill-crit'};
-const statusChipClass = {ok:'chip-ok', warn:'chip-warn', crit:'chip-crit'};
+function escAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
+function escHtml(s){ return String(s==null?'':s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 /* ------------------------------ SIDEBAR -------------------------------- */
 function renderSidebar(){
@@ -634,7 +804,7 @@ function renderSidebar(){
   wrap.innerHTML = filtered.map(m=>{
     const os = overallStatus(m);
     const rail = ALL_STAGES.map(s=>{
-      const st = stageStatus(m,s.key);
+      const st = stageStatusForMitra(m,s.key);
       return `<span class="on ${st==='ok'?'':st}"></span>`;
     }).join('');
     return `
@@ -653,22 +823,39 @@ function renderSidebar(){
       </div>`;
   }).join('') || `<div class="empty-state"><span class="glyph">🗂️</span>Belum ada mitra yang cocok.</div>`;
   document.getElementById('mitraCountFoot').textContent = mitraList.length + ' mitra';
-  document.getElementById('todayLabel').textContent = new Date().toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'});
 }
 
 function selectMitra(id){
   selectedMitraId = id;
+  const m = currentMitra();
+  activeSubProgramId = (m && m.subProgram.length) ? m.subProgram[0].id : null;
   activeStage = 'dana';
+  renderAll();
+}
+function renderOverview(){
+  selectedMitraId = null;
   renderAll();
 }
 
 /* ------------------------------ TOPBAR --------------------------------- */
 function currentMitra(){ return mitraList.find(m=>m.id===selectedMitraId); }
+function currentSubProgram(){
+  const m = currentMitra();
+  if(!m || !m.subProgram.length) return null;
+  return m.subProgram.find(p=>p.id===activeSubProgramId) || m.subProgram[0];
+}
 
 function renderTopbar(){
   const m = currentMitra();
   const top = document.getElementById('topbar');
-  if(!m){ top.innerHTML = `<h1>Ringkasan Seluruh Mitra</h1>`; return; }
+  if(!m){
+    top.innerHTML = `
+      <div>
+        <h1>Ringkasan Semua Mitra</h1>
+        <div class="meta"><span>Pantau status seluruh mitra kemitraan dalam satu layar.</span></div>
+      </div>`;
+    return;
+  }
   top.innerHTML = `
     <div class="topbar-main">
       ${logoImg(m,'mitra-logo')}
@@ -687,18 +874,66 @@ function renderTopbar(){
     <div class="topbar-actions">
       <button class="btn" onclick="openLegalitasViewModal('${m.id}')">📄 Kelengkapan Legalitas<span class="status-dot ${statusPra(m)}"></span></button>
       <button class="btn" onclick="openEditMitraModal('${m.id}')">✎ Edit Informasi</button>
-      <button class="btn" onclick="renderOverview()">Ringkasan Semua Mitra</button>
       <button class="btn btn-danger-ghost" onclick="hapusMitra('${m.id}')">Hapus Mitra</button>
     </div>`;
 }
 
+/* -------------------------- SUB PROGRAM TABS ---------------------------- */
+function renderProgramTabs(){
+  const wrap = document.getElementById('programTabs');
+  const m = currentMitra();
+  if(!m){ wrap.innerHTML=''; return; }
+  const sp = currentSubProgram();
+  wrap.innerHTML = `
+    ${m.subProgram.map(p=>`
+      <div class="program-tab ${sp && p.id===sp.id?'active':''}" onclick="setSubProgram('${p.id}')">
+        <span>${p.nama}</span>
+        ${m.subProgram.length>1?`<span class="program-tab-del" onclick="event.stopPropagation(); hapusSubProgram('${m.id}','${p.id}')" title="Hapus sub program">✕</span>`:''}
+      </div>`).join('')}
+    <button class="program-tab-add" onclick="openSubProgramModal('${m.id}')">+ Sub Program</button>`;
+}
+function setSubProgram(id){
+  activeSubProgramId = id;
+  renderProgramTabs(); renderStageRail(); renderContent();
+}
+function openSubProgramModal(mid){
+  openModal(`
+    <h3>Tambah Sub Program</h3>
+    <div class="field"><label>Nama Sub Program</label><input id="f_spnama" placeholder="Contoh: Pelatihan Guru SD"></div>
+    <div class="field"><label>Deskripsi (opsional)</label><textarea id="f_spdesk" placeholder="Deskripsi singkat sub program"></textarea></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanSubProgram('${mid}')">Simpan</button></div>
+  `);
+}
+function simpanSubProgram(mid){
+  const m = mitraList.find(x=>x.id===mid);
+  const nama = document.getElementById('f_spnama').value.trim();
+  if(!nama) return;
+  const sp = defaultSubProgram(nama);
+  sp.deskripsi = document.getElementById('f_spdesk').value||'';
+  m.subProgram.push(sp);
+  activeSubProgramId = sp.id;
+  activeStage = 'dana';
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusSubProgram(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  if(m.subProgram.length<=1){ alert('Mitra harus memiliki minimal 1 sub program.'); return; }
+  if(!confirm('Hapus sub program ini beserta seluruh data monitoringnya?')) return;
+  m.subProgram = m.subProgram.filter(p=>p.id!==spId);
+  if(activeSubProgramId===spId) activeSubProgramId = m.subProgram[0].id;
+  persistMitra(m);
+  renderAll();
+}
+
 /* ---------------------------- STAGE RAIL (MAIN) ------------------------ */
 function renderStageRail(){
-  const m = currentMitra();
   const rail = document.getElementById('stageRail');
-  if(!m){ rail.innerHTML=''; return; }
+  const m = currentMitra();
+  const sp = currentSubProgram();
+  if(!m || !sp){ rail.innerHTML=''; return; }
   rail.innerHTML = TABS.map((s,i)=>{
-    const st = stageStatus(m,s.key);
+    const st = stageStatusForSubProgram(sp,s.key);
     return `
       <div class="stage-node ${activeStage===s.key?'active':''}" onclick="setStage('${s.key}')">
         <span class="num">0${i+1}</span>
@@ -713,13 +948,15 @@ function renderContent(){
   const m = currentMitra();
   const c = document.getElementById('content');
   if(!m){ renderOverviewContent(); return; }
-  if(activeStage==='dana') return renderDana(m,c);
-  if(activeStage==='aktivitas') return renderAktivitas(m,c);
-  if(activeStage==='laporan') return renderLaporan(m,c);
-  if(activeStage==='evaluasi') return renderEvaluasi(m,c);
+  const sp = currentSubProgram();
+  if(!sp){ c.innerHTML = `<div class="empty-state"><span class="glyph">🗂️</span>Belum ada sub program. Tambahkan lewat tombol "+ Sub Program" di atas.</div>`; return; }
+  if(activeStage==='dana') return renderDana(m,sp,c);
+  if(activeStage==='aktivitas') return renderAktivitas(m,sp,c);
+  if(activeStage==='laporan') return renderLaporan(m,sp,c);
+  if(activeStage==='evaluasi') return renderEvaluasi(m,sp,c);
 }
 
-/* --- PRA (kini ditampilkan lewat modal "Kelengkapan Legalitas" dari topbar) --- */
+/* --- PRA (ditampilkan lewat modal "Kelengkapan Legalitas" dari topbar) --- */
 function legalitasModalHtml(m){
   return `
     <h3>Kelengkapan Dokumen Legalitas</h3>
@@ -758,38 +995,60 @@ function updateLegalitasStatus(mid,idx,val){
   const m = mitraList.find(x=>x.id===mid);
   m.legalitas[idx].status = val;
   m.legalitas[idx].tanggal = val==='ada' ? new Date().toISOString().slice(0,10) : m.legalitas[idx].tanggal;
+  persistMitra(m);
   renderAll();
   refreshLegalitasModalIfOpen(mid);
 }
 function hapusLegalitas(mid,idx){
   const m = mitraList.find(x=>x.id===mid);
   m.legalitas.splice(idx,1);
+  persistMitra(m);
   renderAll();
   refreshLegalitasModalIfOpen(mid);
 }
+function openLegalitasModal(mid){
+  openModal(`
+    <h3>Tambah Dokumen Legalitas</h3>
+    <div class="field"><label>Nama Dokumen</label><input id="f_ldoc" placeholder="Contoh: Akta Notaris"></div>
+    <div class="field"><label>Status</label>
+      <select id="f_lstatus"><option value="ada">Lengkap</option><option value="proses">Proses</option><option value="belum">Belum Ada</option></select>
+    </div>
+    <div class="field"><label>Tautan Google Drive (opsional)</label><input id="f_llink" placeholder="https://drive.google.com/..."></div>
+    <div class="modal-actions"><button class="btn" onclick="openLegalitasViewModal('${mid}')">Batal</button><button class="btn btn-primary" onclick="simpanLegalitas('${mid}')">Simpan</button></div>
+  `);
+}
+function simpanLegalitas(mid){
+  const m = mitraList.find(x=>x.id===mid);
+  const nama = document.getElementById('f_ldoc').value.trim();
+  if(!nama) return;
+  m.legalitas.push({nama, status:document.getElementById('f_lstatus').value, link:document.getElementById('f_llink').value, tanggal:new Date().toISOString().slice(0,10)});
+  persistMitra(m);
+  renderAll();
+  openLegalitasViewModal(mid);
+}
 
 /* --- DANA --- */
-function renderDana(m,c){
-  const totalRapb = m.dana.reduce((a,b)=>a+b.rapb,0);
-  const totalRealisasi = m.dana.reduce((a,b)=>a+b.realisasi,0);
-  const totalSaldo = m.dana.length? m.dana[m.dana.length-1].saldo : 0;
+function renderDana(m,sp,c){
+  const totalRapb = sp.dana.reduce((a,b)=>a+b.rapb,0);
+  const totalRealisasi = sp.dana.reduce((a,b)=>a+b.realisasi,0);
+  const totalSaldo = sp.dana.length? sp.dana[sp.dana.length-1].saldo : 0;
   const pct = totalRapb? Math.round(totalRealisasi/totalRapb*100):0;
   c.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card"><div class="label">Total RAPB</div><div class="value plain">${fmtRp(totalRapb)}</div></div>
       <div class="stat-card"><div class="label">Total Realisasi</div><div class="value plain">${fmtRp(totalRealisasi)}</div><div class="sub">${pct}% dari RAPB</div></div>
       <div class="stat-card"><div class="label">Saldo Bulan Terakhir</div><div class="value plain">${fmtRp(totalSaldo)}</div></div>
-      <div class="stat-card"><div class="label">Bulan Tercatat</div><div class="value">${m.dana.length}</div><div class="sub">Frekuensi bulanan</div></div>
+      <div class="stat-card"><div class="label">Bulan Tercatat</div><div class="value">${sp.dana.length}</div><div class="sub">Frekuensi bulanan</div></div>
     </div>
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Monitoring Dana Bulanan</h3><p>RAPB, pencairan, realisasi, dan saldo per bulan.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openDanaModal('${m.id}')">+ Tambah Bulan</button>
+        <div><h3>Monitoring Dana Bulanan — ${sp.nama}</h3><p>RAPB, pencairan, realisasi, dan saldo per bulan.</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openDanaModal('${m.id}','${sp.id}')">+ Tambah Bulan</button>
       </div>
       <table>
         <thead><tr><th>Bulan</th><th class="num-cell">RAPB</th><th class="num-cell">Pencairan</th><th class="num-cell">Realisasi</th><th class="num-cell">Saldo</th><th>Status</th><th></th></tr></thead>
         <tbody>
-        ${m.dana.map((d,i)=>{
+        ${sp.dana.map((d,i)=>{
           const rasio = d.pencairan? d.realisasi/d.pencairan:0;
           const st = d.pencairan===0?'crit':(rasio>=0.7?'ok':rasio>=0.3?'warn':'crit');
           return `<tr>
@@ -799,32 +1058,64 @@ function renderDana(m,c){
             <td class="num-cell num-plain">${fmtRp(d.realisasi)}</td>
             <td class="num-cell num-plain">${fmtRp(d.saldo)}</td>
             <td><span class="chip ${statusChipClass[st]}">${Math.round(rasio*100)}%</span></td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusDana('${m.id}',${i})">✕</button></td>
+            <td class="row-actions"><button class="icon-btn" onclick="hapusDana('${m.id}','${sp.id}',${i})">✕</button></td>
           </tr>`;
         }).join('') || `<tr><td colspan="7"><div class="empty-state">Belum ada data dana bulanan.</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
-function hapusDana(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.dana.splice(idx,1); renderAll(); }
+function openDanaModal(mid,spId){
+  openModal(`
+    <h3>Tambah Data Dana Bulanan</h3>
+    <div class="field"><label>Bulan</label><input id="f_dbulan" placeholder="Contoh: Agustus 2026"></div>
+    <div class="field"><label>RAPB</label><input id="f_drapb" type="number" placeholder="0"></div>
+    <div class="field"><label>Pencairan</label><input id="f_dpencairan" type="number" placeholder="0"></div>
+    <div class="field"><label>Realisasi</label><input id="f_drealisasi" type="number" placeholder="0"></div>
+    <div class="field"><label>Saldo</label><input id="f_dsaldo" type="number" placeholder="0"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanDana('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanDana(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const bulan = document.getElementById('f_dbulan').value.trim();
+  if(!bulan) return;
+  sp.dana.push({
+    bulan,
+    rapb:Number(document.getElementById('f_drapb').value)||0,
+    pencairan:Number(document.getElementById('f_dpencairan').value)||0,
+    realisasi:Number(document.getElementById('f_drealisasi').value)||0,
+    saldo:Number(document.getElementById('f_dsaldo').value)||0,
+  });
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusDana(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.dana.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
 
 /* --- AKTIVITAS --- */
-function renderAktivitas(m,c){
+function renderAktivitas(m,sp,c){
   c.innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Rilis Berita & Dokumentasi (Harian)</h3><p>Aktivitas publikasi harian mitra.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openHarianModal('${m.id}')">+ Tambah Entri</button>
+        <div><h3>Rilis Berita & Dokumentasi (Harian) — ${sp.nama}</h3><p>Aktivitas publikasi harian mitra.</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openHarianModal('${m.id}','${sp.id}')">+ Tambah Entri</button>
       </div>
       <table>
         <thead><tr><th>Tanggal</th><th>Judul / Kegiatan</th><th>Berkas</th><th></th></tr></thead>
         <tbody>
-        ${m.aktivitasHarian.map((a,i)=>`
+        ${sp.aktivitasHarian.map((a,i)=>`
           <tr>
             <td class="mono">${fmtDate(a.tanggal)}</td>
             <td>${a.judul}</td>
             <td class="link-cell">${a.link?`<a href="${a.link}" target="_blank">Lihat berkas ↗</a>`:'—'}</td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusHarian('${m.id}',${i})">✕</button></td>
+            <td class="row-actions"><button class="icon-btn" onclick="hapusHarian('${m.id}','${sp.id}',${i})">✕</button></td>
           </tr>`).join('') || `<tr><td colspan="4"><div class="empty-state">Belum ada aktivitas harian tercatat.</div></td></tr>`}
         </tbody>
       </table>
@@ -832,84 +1123,164 @@ function renderAktivitas(m,c){
     <div class="panel">
       <div class="panel-head">
         <div><h3>Weekly Report (Pekanan)</h3><p>Laporan mingguan aktivitas mitra.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openMingguanModal('${m.id}')">+ Tambah Minggu</button>
+        <button class="btn btn-primary btn-sm" onclick="openMingguanModal('${m.id}','${sp.id}')">+ Tambah Minggu</button>
       </div>
       <table>
         <thead><tr><th>Minggu</th><th>Tanggal Kirim</th><th>Berkas</th><th>Status</th><th></th></tr></thead>
         <tbody>
-        ${m.aktivitasMingguan.map((a,i)=>`
+        ${sp.aktivitasMingguan.map((a,i)=>`
           <tr>
             <td>${a.minggu}</td>
             <td class="mono">${fmtDate(a.tanggal)}</td>
             <td class="link-cell">${a.link?`<a href="${a.link}" target="_blank">Lihat berkas ↗</a>`:'—'}</td>
             <td><span class="chip ${a.status==='ada'?'chip-ok':'chip-crit'}">${a.status==='ada'?'Diterima':'Belum'}</span></td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusMingguan('${m.id}',${i})">✕</button></td>
+            <td class="row-actions"><button class="icon-btn" onclick="hapusMingguan('${m.id}','${sp.id}',${i})">✕</button></td>
           </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">Belum ada weekly report.</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
-function hapusHarian(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.aktivitasHarian.splice(idx,1); renderAll(); }
-function hapusMingguan(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.aktivitasMingguan.splice(idx,1); renderAll(); }
+function openHarianModal(mid,spId){
+  openModal(`
+    <h3>Tambah Aktivitas Harian</h3>
+    <div class="field"><label>Tanggal</label><input id="f_htgl" type="date"></div>
+    <div class="field"><label>Judul / Kegiatan</label><input id="f_hjudul" placeholder="Contoh: Rilis berita ..."></div>
+    <div class="field"><label>Tautan Google Drive</label><input id="f_hlink" placeholder="https://drive.google.com/..."></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanHarian('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanHarian(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const judul = document.getElementById('f_hjudul').value.trim();
+  if(!judul) return;
+  sp.aktivitasHarian.unshift({tanggal:document.getElementById('f_htgl').value||new Date().toISOString().slice(0,10), judul, link:document.getElementById('f_hlink').value, status:'ada'});
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusHarian(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.aktivitasHarian.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
+function openMingguanModal(mid,spId){
+  openModal(`
+    <h3>Tambah Weekly Report</h3>
+    <div class="field"><label>Label Minggu</label><input id="f_mminggu" placeholder="Contoh: Minggu ke-1 Agustus 2026"></div>
+    <div class="field"><label>Tanggal Kirim</label><input id="f_mtgl" type="date"></div>
+    <div class="field"><label>Tautan Google Drive</label><input id="f_mlink" placeholder="https://drive.google.com/..."></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanMingguan('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanMingguan(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const minggu = document.getElementById('f_mminggu').value.trim();
+  if(!minggu) return;
+  sp.aktivitasMingguan.unshift({minggu, tanggal:document.getElementById('f_mtgl').value||new Date().toISOString().slice(0,10), link:document.getElementById('f_mlink').value, status:'ada'});
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusMingguan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.aktivitasMingguan.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
 
 /* --- LAPORAN --- */
-function renderLaporan(m,c){
+function renderLaporan(m,sp,c){
   c.innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Kelengkapan Laporan Bulanan</h3><p>Data Penerima Manfaat, Keuangan, Dokumentasi, dan Laporan Tertulis.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openLaporanModal('${m.id}')">+ Tambah Bulan</button>
+        <div><h3>Kelengkapan Laporan Bulanan — ${sp.nama}</h3><p>Data Penerima Manfaat, Keuangan, Dokumentasi, dan Laporan Tertulis.</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openLaporanModal('${m.id}','${sp.id}')">+ Tambah Bulan</button>
       </div>
       <table>
         <thead><tr><th>Bulan</th><th>Data Penerima Manfaat</th><th>Keuangan</th><th>Dokumentasi</th><th>Laporan Tertulis</th><th></th></tr></thead>
         <tbody>
-        ${m.laporanBulanan.map((l,i)=>`
+        ${sp.laporanBulanan.map((l,i)=>`
           <tr>
             <td>${l.bulan}</td>
             <td>${chipBool(l.penerima)}</td>
             <td>${chipBool(l.keuangan)}</td>
             <td>${chipBool(l.dokumentasi)}</td>
             <td>${chipBool(l.tertulis)}</td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusLaporan('${m.id}',${i})">✕</button></td>
+            <td class="row-actions"><button class="icon-btn" onclick="hapusLaporan('${m.id}','${sp.id}',${i})">✕</button></td>
           </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">Belum ada laporan bulanan tercatat.</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
 function chipBool(v){ return v? `<span class="chip chip-ok">Lengkap</span>` : `<span class="chip chip-crit">Belum</span>`; }
-function hapusLaporan(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.laporanBulanan.splice(idx,1); renderAll(); }
+function openLaporanModal(mid,spId){
+  openModal(`
+    <h3>Tambah Laporan Bulanan</h3>
+    <div class="field"><label>Bulan</label><input id="f_labulan" placeholder="Contoh: Agustus 2026"></div>
+    <div class="field"><label>Data Penerima Manfaat</label><select id="f_lapm"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
+    <div class="field"><label>Keuangan</label><select id="f_lakeu"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
+    <div class="field"><label>Dokumentasi</label><select id="f_ladok"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
+    <div class="field"><label>Laporan Tertulis</label><select id="f_latert"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanLaporan('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanLaporan(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const bulan = document.getElementById('f_labulan').value.trim();
+  if(!bulan) return;
+  sp.laporanBulanan.push({
+    bulan,
+    penerima: document.getElementById('f_lapm').value==='1',
+    keuangan: document.getElementById('f_lakeu').value==='1',
+    dokumentasi: document.getElementById('f_ladok').value==='1',
+    tertulis: document.getElementById('f_latert').value==='1',
+  });
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusLaporan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.laporanBulanan.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
 
 /* --- EVALUASI --- */
-function renderEvaluasi(m,c){
+function renderEvaluasi(m,sp,c){
   c.innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Raport Kinerja Mitra</h3><p>Penilaian berkala terhadap kinerja mitra.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openRaportModal('${m.id}')">+ Terbitkan Raport</button>
+        <div><h3>Raport Kinerja — ${sp.nama}</h3><p>Penilaian berkala terhadap kinerja sub program.</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openRaportModal('${m.id}','${sp.id}')">+ Terbitkan Raport</button>
       </div>
-      ${m.evaluasi.raport.map((r,i)=>`
+      ${sp.evaluasi.raport.map((r,i)=>`
         <div class="legalitas-item">
           <div class="legalitas-left">
             <div class="name">${r.periode} — Nilai ${r.skor}</div>
             <div class="date">${r.catatan}</div>
           </div>
-          <button class="icon-btn" onclick="hapusRaport('${m.id}',${i})">✕</button>
+          <button class="icon-btn" onclick="hapusRaport('${m.id}','${sp.id}',${i})">✕</button>
         </div>`).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
     </div>
     <div class="panel">
       <div class="panel-head">
         <div><h3>Jadwal Meeting Evaluasi</h3><p>Agenda pertemuan evaluasi dengan mitra.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openJadwalModal('${m.id}')">+ Tambah Jadwal</button>
+        <button class="btn btn-primary btn-sm" onclick="openJadwalModal('${m.id}','${sp.id}')">+ Tambah Jadwal</button>
       </div>
       <table>
         <thead><tr><th>Tanggal</th><th>Agenda</th><th>Status</th><th></th></tr></thead>
         <tbody>
-        ${m.evaluasi.jadwal.map((j,i)=>`
+        ${sp.evaluasi.jadwal.map((j,i)=>`
           <tr>
             <td class="mono">${fmtDate(j.tanggal)}</td>
             <td>${j.agenda}</td>
             <td><span class="chip ${j.status==='selesai'?'chip-ok':'chip-warn'}">${j.status==='selesai'?'Selesai':'Terjadwal'}</span></td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusJadwal('${m.id}',${i})">✕</button></td>
+            <td class="row-actions"><button class="icon-btn" onclick="hapusJadwal('${m.id}','${sp.id}',${i})">✕</button></td>
           </tr>`).join('') || `<tr><td colspan="4"><div class="empty-state">Belum ada jadwal meeting.</div></td></tr>`}
         </tbody>
       </table>
@@ -917,29 +1288,95 @@ function renderEvaluasi(m,c){
     <div class="panel">
       <div class="panel-head">
         <div><h3>Catatan Hasil Meeting</h3><p>Ringkasan poin penting dari setiap pertemuan.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}')">+ Tambah Catatan</button>
+        <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}','${sp.id}')">+ Tambah Catatan</button>
       </div>
-      ${m.evaluasi.catatan.map((cn,i)=>`
+      ${sp.evaluasi.catatan.map((cn,i)=>`
         <div class="legalitas-item">
           <div class="legalitas-left">
             <div class="name">${fmtDate(cn.tanggal)}</div>
             <div class="date">${cn.ringkasan}</div>
           </div>
-          <button class="icon-btn" onclick="hapusCatatan('${m.id}',${i})">✕</button>
+          <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
     </div>`;
 }
-function hapusRaport(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.evaluasi.raport.splice(idx,1); renderAll(); }
-function hapusJadwal(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.evaluasi.jadwal.splice(idx,1); renderAll(); }
-function hapusCatatan(mid,idx){ const m=mitraList.find(x=>x.id===mid); m.evaluasi.catatan.splice(idx,1); renderAll(); }
-
-/* --------------------------- OVERVIEW (ALL MITRA) ----------------------- */
-function renderOverview(){
-  selectedMitraId = null;
+function openRaportModal(mid,spId){
+  openModal(`
+    <h3>Terbitkan Raport Kinerja</h3>
+    <div class="field"><label>Periode</label><input id="f_rperiode" placeholder="Contoh: Semester 2 2026"></div>
+    <div class="field"><label>Skor / Nilai</label><input id="f_rskor" placeholder="Contoh: A, B+, 85"></div>
+    <div class="field"><label>Catatan</label><textarea id="f_rcatatan" placeholder="Ringkasan penilaian..."></textarea></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanRaport('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanRaport(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const periode = document.getElementById('f_rperiode').value.trim();
+  if(!periode) return;
+  sp.evaluasi.raport.push({periode, skor:document.getElementById('f_rskor').value||'-', catatan:document.getElementById('f_rcatatan').value||''});
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusRaport(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.evaluasi.raport.splice(idx,1);
+  persistMitra(m);
   renderAll();
 }
+function openJadwalModal(mid,spId){
+  openModal(`
+    <h3>Tambah Jadwal Meeting Evaluasi</h3>
+    <div class="field"><label>Tanggal</label><input id="f_jtgl" type="date"></div>
+    <div class="field"><label>Agenda</label><input id="f_jagenda" placeholder="Contoh: Evaluasi triwulan"></div>
+    <div class="field"><label>Status</label><select id="f_jstatus"><option value="terjadwal">Terjadwal</option><option value="selesai">Selesai</option></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanJadwal('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanJadwal(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const agenda = document.getElementById('f_jagenda').value.trim();
+  if(!agenda) return;
+  sp.evaluasi.jadwal.push({tanggal:document.getElementById('f_jtgl').value||new Date().toISOString().slice(0,10), agenda, status:document.getElementById('f_jstatus').value});
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusJadwal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.evaluasi.jadwal.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
+function openCatatanModal(mid,spId){
+  openModal(`
+    <h3>Tambah Catatan Hasil Meeting</h3>
+    <div class="field"><label>Tanggal</label><input id="f_ctgl" type="date"></div>
+    <div class="field"><label>Ringkasan</label><textarea id="f_cringkasan" placeholder="Poin penting hasil meeting..."></textarea></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanCatatan('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanCatatan(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const ringkasan = document.getElementById('f_cringkasan').value.trim();
+  if(!ringkasan) return;
+  sp.evaluasi.catatan.push({tanggal:document.getElementById('f_ctgl').value||new Date().toISOString().slice(0,10), ringkasan});
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function hapusCatatan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.evaluasi.catatan.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
+
+/* --------------------------- OVERVIEW (ALL MITRA) ----------------------- */
 function renderOverviewContent(){
-  document.getElementById('stageRail').innerHTML='';
   const c = document.getElementById('content');
   const totalMitra = mitraList.length;
   const kritis = mitraList.filter(m=>overallStatus(m)==='crit').length;
@@ -962,13 +1399,13 @@ function renderOverviewContent(){
               ${logoImg(m,'overview-logo')}
               <div>
                 <h4>${m.nama}</h4>
-                <div class="pic">PIC: ${m.pic}</div>
+                <div class="pic">PIC: ${m.pic} · ${m.subProgram.length} sub program</div>
               </div>
             </div>
             ${m.ringkasan?`<div class="ringkasan-snip">${m.ringkasan}</div>`:''}
             <span class="status-pill ${statusPillClass[os]}">${statusLabel[os]}</span>
             <div class="stage-rail-mini" style="margin-top:12px;">
-              ${ALL_STAGES.map(s=>{const st=stageStatus(m,s.key); return `<span class="on ${st==='ok'?'':st}" style="background:${st==='ok'?'#2E8B57':st==='warn'?'#C7862B':'#C0473F'}"></span>`;}).join('')}
+              ${ALL_STAGES.map(s=>{const st=stageStatusForMitra(m,s.key); return `<span class="on ${st==='ok'?'':st}" style="background:${st==='ok'?'#2E8B57':st==='warn'?'#C7862B':'#C0473F'}"></span>`;}).join('')}
             </div>
           </div>`;
         }).join('') || `<div class="empty-state">Belum ada mitra. Klik "Tambah Mitra" untuk memulai.</div>`}
@@ -995,15 +1432,15 @@ function openMitraModal(){
     <div class="field"><label>Tanggal Mulai Kemitraan</label><input id="f_mulai" type="date"></div>
     <div class="field"><label>Ringkasan Program</label><textarea id="f_ringkasan" placeholder="Ringkasan singkat program/kegiatan mitra, akan ditampilkan di halaman utama"></textarea></div>
     <div class="field"><label>Link Logo Mitra</label><input id="f_logo" placeholder="https://drive.google.com/... (tautan gambar logo)"></div>
-    <div class="tag-note">Logo ditampilkan sebagai thumbnail. Jika link kosong atau gagal dimuat, sistem otomatis menampilkan inisial nama mitra. Dokumen legalitas, dana, aktivitas, laporan, dan evaluasi dapat dilengkapi setelah mitra dibuat.</div>
+    <div class="tag-note">Logo ditampilkan sebagai thumbnail. Sub program, dokumen legalitas, dana, aktivitas, laporan, dan evaluasi dapat dilengkapi setelah mitra dibuat.</div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanMitra()">Simpan</button></div>
   `);
 }
 function simpanMitra(){
   const nama = document.getElementById('f_nama').value.trim();
   if(!nama) return;
-  const id = 'm'+Date.now();
-  mitraList.push({
+  const id = newMitraId();
+  const m = {
     id, nama,
     direktur: document.getElementById('f_direktur').value||'—',
     pic: document.getElementById('f_pic').value||'—',
@@ -1018,23 +1455,24 @@ function simpanMitra(){
       {nama:'MoU', status:'belum', link:'', tanggal:''},
       {nama:'Pakta Integritas', status:'belum', link:'', tanggal:''},
     ],
-    dana:[], aktivitasHarian:[], aktivitasMingguan:[], laporanBulanan:[],
-    evaluasi:{raport:[],jadwal:[],catatan:[]}
-  });
+    subProgram:[defaultSubProgram('Program Utama')]
+  };
+  mitraList.push(m);
   selectedMitraId = id;
+  activeSubProgramId = m.subProgram[0].id;
+  activeStage = 'dana';
+  persistMitra(m);
   closeModal(); renderAll();
 }
 function hapusMitra(id){
   if(!confirm('Hapus mitra ini beserta seluruh data monitoringnya?')) return;
   mitraList = mitraList.filter(m=>m.id!==id);
-  selectedMitraId = mitraList.length? mitraList[0].id : null;
+  selectedMitraId = null;
+  removeMitraRemote(id);
   renderAll();
 }
 
 /* --- EDIT INFORMASI MITRA --- */
-function escAttr(s){ return String(s==null?'':s).replace(/"/g,'&quot;'); }
-function escHtml(s){ return String(s==null?'':s).replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
 function openEditMitraModal(mid){
   const m = mitraList.find(x=>x.id===mid);
   openModal(`
@@ -1062,160 +1500,7 @@ function simpanEditMitra(mid){
   m.mulai = document.getElementById('f_emulai').value||m.mulai;
   m.ringkasan = document.getElementById('f_eringkasan').value||'';
   m.logo = document.getElementById('f_elogo').value||'';
-  closeModal(); renderAll();
-}
-
-function openLegalitasModal(mid){
-  openModal(`
-    <h3>Tambah Dokumen Legalitas</h3>
-    <div class="field"><label>Nama Dokumen</label><input id="f_ldoc" placeholder="Contoh: Akta Notaris"></div>
-    <div class="field"><label>Status</label>
-      <select id="f_lstatus"><option value="ada">Lengkap</option><option value="proses">Proses</option><option value="belum">Belum Ada</option></select>
-    </div>
-    <div class="field"><label>Tautan Google Drive (opsional)</label><input id="f_llink" placeholder="https://drive.google.com/..."></div>
-    <div class="modal-actions"><button class="btn" onclick="openLegalitasViewModal('${mid}')">Batal</button><button class="btn btn-primary" onclick="simpanLegalitas('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanLegalitas(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const nama = document.getElementById('f_ldoc').value.trim();
-  if(!nama) return;
-  m.legalitas.push({nama, status:document.getElementById('f_lstatus').value, link:document.getElementById('f_llink').value, tanggal:new Date().toISOString().slice(0,10)});
-  renderAll();
-  openLegalitasViewModal(mid);
-}
-
-function openDanaModal(mid){
-  openModal(`
-    <h3>Tambah Data Dana Bulanan</h3>
-    <div class="field"><label>Bulan</label><input id="f_dbulan" placeholder="Contoh: Agustus 2026"></div>
-    <div class="field"><label>RAPB</label><input id="f_drapb" type="number" placeholder="0"></div>
-    <div class="field"><label>Pencairan</label><input id="f_dpencairan" type="number" placeholder="0"></div>
-    <div class="field"><label>Realisasi</label><input id="f_drealisasi" type="number" placeholder="0"></div>
-    <div class="field"><label>Saldo</label><input id="f_dsaldo" type="number" placeholder="0"></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanDana('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanDana(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const bulan = document.getElementById('f_dbulan').value.trim();
-  if(!bulan) return;
-  m.dana.push({
-    bulan,
-    rapb:Number(document.getElementById('f_drapb').value)||0,
-    pencairan:Number(document.getElementById('f_dpencairan').value)||0,
-    realisasi:Number(document.getElementById('f_drealisasi').value)||0,
-    saldo:Number(document.getElementById('f_dsaldo').value)||0,
-  });
-  closeModal(); renderAll();
-}
-
-function openHarianModal(mid){
-  openModal(`
-    <h3>Tambah Aktivitas Harian</h3>
-    <div class="field"><label>Tanggal</label><input id="f_htgl" type="date"></div>
-    <div class="field"><label>Judul / Kegiatan</label><input id="f_hjudul" placeholder="Contoh: Rilis berita ..."></div>
-    <div class="field"><label>Tautan Google Drive</label><input id="f_hlink" placeholder="https://drive.google.com/..."></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanHarian('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanHarian(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const judul = document.getElementById('f_hjudul').value.trim();
-  if(!judul) return;
-  m.aktivitasHarian.unshift({tanggal:document.getElementById('f_htgl').value||new Date().toISOString().slice(0,10), judul, link:document.getElementById('f_hlink').value, status:'ada'});
-  closeModal(); renderAll();
-}
-
-function openMingguanModal(mid){
-  openModal(`
-    <h3>Tambah Weekly Report</h3>
-    <div class="field"><label>Label Minggu</label><input id="f_mminggu" placeholder="Contoh: Minggu ke-1 Agustus 2026"></div>
-    <div class="field"><label>Tanggal Kirim</label><input id="f_mtgl" type="date"></div>
-    <div class="field"><label>Tautan Google Drive</label><input id="f_mlink" placeholder="https://drive.google.com/..."></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanMingguan('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanMingguan(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const minggu = document.getElementById('f_mminggu').value.trim();
-  if(!minggu) return;
-  m.aktivitasMingguan.unshift({minggu, tanggal:document.getElementById('f_mtgl').value||new Date().toISOString().slice(0,10), link:document.getElementById('f_mlink').value, status:'ada'});
-  closeModal(); renderAll();
-}
-
-function openLaporanModal(mid){
-  openModal(`
-    <h3>Tambah Laporan Bulanan</h3>
-    <div class="field"><label>Bulan</label><input id="f_labulan" placeholder="Contoh: Agustus 2026"></div>
-    <div class="field"><label>Data Penerima Manfaat</label><select id="f_lapm"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="field"><label>Keuangan</label><select id="f_lakeu"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="field"><label>Dokumentasi</label><select id="f_ladok"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="field"><label>Laporan Tertulis</label><select id="f_latert"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanLaporan('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanLaporan(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const bulan = document.getElementById('f_labulan').value.trim();
-  if(!bulan) return;
-  m.laporanBulanan.push({
-    bulan,
-    penerima: document.getElementById('f_lapm').value==='1',
-    keuangan: document.getElementById('f_lakeu').value==='1',
-    dokumentasi: document.getElementById('f_ladok').value==='1',
-    tertulis: document.getElementById('f_latert').value==='1',
-  });
-  closeModal(); renderAll();
-}
-
-function openRaportModal(mid){
-  openModal(`
-    <h3>Terbitkan Raport Kinerja</h3>
-    <div class="field"><label>Periode</label><input id="f_rperiode" placeholder="Contoh: Semester 2 2026"></div>
-    <div class="field"><label>Skor / Nilai</label><input id="f_rskor" placeholder="Contoh: A, B+, 85"></div>
-    <div class="field"><label>Catatan</label><textarea id="f_rcatatan" placeholder="Ringkasan penilaian..."></textarea></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanRaport('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanRaport(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const periode = document.getElementById('f_rperiode').value.trim();
-  if(!periode) return;
-  m.evaluasi.raport.push({periode, skor:document.getElementById('f_rskor').value||'-', catatan:document.getElementById('f_rcatatan').value||''});
-  closeModal(); renderAll();
-}
-
-function openJadwalModal(mid){
-  openModal(`
-    <h3>Tambah Jadwal Meeting Evaluasi</h3>
-    <div class="field"><label>Tanggal</label><input id="f_jtgl" type="date"></div>
-    <div class="field"><label>Agenda</label><input id="f_jagenda" placeholder="Contoh: Evaluasi triwulan"></div>
-    <div class="field"><label>Status</label><select id="f_jstatus"><option value="terjadwal">Terjadwal</option><option value="selesai">Selesai</option></select></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanJadwal('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanJadwal(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const agenda = document.getElementById('f_jagenda').value.trim();
-  if(!agenda) return;
-  m.evaluasi.jadwal.push({tanggal:document.getElementById('f_jtgl').value||new Date().toISOString().slice(0,10), agenda, status:document.getElementById('f_jstatus').value});
-  closeModal(); renderAll();
-}
-
-function openCatatanModal(mid){
-  openModal(`
-    <h3>Tambah Catatan Hasil Meeting</h3>
-    <div class="field"><label>Tanggal</label><input id="f_ctgl" type="date"></div>
-    <div class="field"><label>Ringkasan</label><textarea id="f_cringkasan" placeholder="Poin penting hasil meeting..."></textarea></div>
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanCatatan('${mid}')">Simpan</button></div>
-  `);
-}
-function simpanCatatan(mid){
-  const m = mitraList.find(x=>x.id===mid);
-  const ringkasan = document.getElementById('f_cringkasan').value.trim();
-  if(!ringkasan) return;
-  m.evaluasi.catatan.push({tanggal:document.getElementById('f_ctgl').value||new Date().toISOString().slice(0,10), ringkasan});
+  persistMitra(m);
   closeModal(); renderAll();
 }
 
@@ -1223,8 +1508,15 @@ function simpanCatatan(mid){
 function renderAll(){
   renderSidebar();
   renderTopbar();
-  if(selectedMitraId){ renderStageRail(); renderContent(); }
-  else { renderOverviewContent(); }
+  if(selectedMitraId){
+    renderProgramTabs();
+    renderStageRail();
+    renderContent();
+  } else {
+    document.getElementById('programTabs').innerHTML = '';
+    document.getElementById('stageRail').innerHTML = '';
+    renderOverviewContent();
+  }
 }
 renderAll();
 </script>
