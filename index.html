@@ -649,9 +649,9 @@ let mitraList = [
       {
         id:'sp1', nama:'Pelatihan Guru SD', deskripsi:'Pelatihan & pendampingan guru kelas 1–6',
         dana:[
-          {bulan:'Mei 2026', rapb:60000000, pencairan:60000000, realisasi:58000000, saldo:2000000},
-          {bulan:'Juni 2026', rapb:60000000, pencairan:60000000, realisasi:55000000, saldo:5000000},
-          {bulan:'Juli 2026', rapb:60000000, pencairan:60000000, realisasi:21000000, saldo:39000000},
+          {bulan:'Mei 2026', rapbZakat:36000000, rapbInfak:24000000, pencairanZakat:36000000, pencairanInfak:24000000, realisasiZakat:35000000, realisasiInfak:23000000},
+          {bulan:'Juni 2026', rapbZakat:36000000, rapbInfak:24000000, pencairanZakat:36000000, pencairanInfak:24000000, realisasiZakat:33000000, realisasiInfak:22000000},
+          {bulan:'Juli 2026', rapbZakat:36000000, rapbInfak:24000000, pencairanZakat:36000000, pencairanInfak:24000000, realisasiZakat:13000000, realisasiInfak:8000000},
         ],
         aktivitasHarian:[
           {tanggal:'2026-07-27', judul:'Rilis berita pelatihan guru tahap 3', link:'https://drive.google.com/...', status:'ada'},
@@ -674,7 +674,7 @@ let mitraList = [
       {
         id:'sp2', nama:'Beasiswa Siswa Berprestasi', deskripsi:'Bantuan biaya pendidikan siswa kurang mampu berprestasi',
         dana:[
-          {bulan:'Juli 2026', rapb:20000000, pencairan:20000000, realisasi:12000000, saldo:8000000},
+          {bulan:'Juli 2026', rapbZakat:12000000, rapbInfak:8000000, pencairanZakat:12000000, pencairanInfak:8000000, realisasiZakat:7000000, realisasiInfak:5000000},
         ],
         aktivitasHarian:[], aktivitasMingguan:[],
         laporanBulanan:[],
@@ -702,8 +702,8 @@ let mitraList = [
       {
         id:'sp3', nama:'Penanaman & Edukasi Lingkungan', deskripsi:'',
         dana:[
-          {bulan:'Juni 2026', rapb:35000000, pencairan:20000000, realisasi:18000000, saldo:2000000},
-          {bulan:'Juli 2026', rapb:35000000, pencairan:0, realisasi:0, saldo:0},
+          {bulan:'Juni 2026', rapbZakat:21000000, rapbInfak:14000000, pencairanZakat:12000000, pencairanInfak:8000000, realisasiZakat:11000000, realisasiInfak:7000000},
+          {bulan:'Juli 2026', rapbZakat:21000000, rapbInfak:14000000, pencairanZakat:0, pencairanInfak:0, realisasiZakat:0, realisasiInfak:0},
         ],
         aktivitasHarian:[
           {tanggal:'2026-07-10', judul:'Dokumentasi penanaman pohon', link:'https://drive.google.com/...', status:'ada'},
@@ -837,8 +837,10 @@ function statusPra(m){
 function statusDana(sp){
   if(!sp.dana.length) return 'crit';
   const last = sp.dana[sp.dana.length-1];
-  if(last.pencairan===0) return 'crit';
-  const rasio = last.pencairan? last.realisasi/last.pencairan : 0;
+  const totalPencairan = (last.pencairanZakat||0)+(last.pencairanInfak||0);
+  const totalRealisasi = (last.realisasiZakat||0)+(last.realisasiInfak||0);
+  if(totalPencairan===0) return 'crit';
+  const rasio = totalRealisasi/totalPencairan;
   if(rasio>=0.7) return 'ok';
   if(rasio>=0.3) return 'warn';
   return 'crit';
@@ -1134,70 +1136,116 @@ function simpanLegalitas(mid){
   openLegalitasViewModal(mid);
 }
 
-/* --- DANA --- */
+/* --- DANA ---
+   Setiap entri dana bulanan memisahkan 2 sumber: Zakat & Infak.
+   Field yang diinput: rapbZakat/rapbInfak, pencairanZakat/pencairanInfak,
+   realisasiZakat/realisasiInfak. Saldo per sumber & saldo total SELALU
+   dihitung otomatis (pencairan - realisasi), tidak pernah diinput manual. */
+function saldoDana(d){
+  const saldoZakat = (d.pencairanZakat||0) - (d.realisasiZakat||0);
+  const saldoInfak = (d.pencairanInfak||0) - (d.realisasiInfak||0);
+  return { saldoZakat, saldoInfak, saldoTotal: saldoZakat + saldoInfak };
+}
 function renderDana(m,sp,c){
-  const totalRapb = sp.dana.reduce((a,b)=>a+b.rapb,0);
-  const totalRealisasi = sp.dana.reduce((a,b)=>a+b.realisasi,0);
-  const totalSaldo = sp.dana.length? sp.dana[sp.dana.length-1].saldo : 0;
+  const totalRapb = sp.dana.reduce((a,b)=>a+(b.rapbZakat||0)+(b.rapbInfak||0),0);
+  const totalRealisasi = sp.dana.reduce((a,b)=>a+(b.realisasiZakat||0)+(b.realisasiInfak||0),0);
+  const totalSaldo = sp.dana.length? saldoDana(sp.dana[sp.dana.length-1]).saldoTotal : 0;
   const pct = totalRapb? Math.round(totalRealisasi/totalRapb*100):0;
   c.innerHTML = `
     <div class="stat-grid">
       <div class="stat-card"><div class="label">Total RAPB</div><div class="value plain">${fmtRp(totalRapb)}</div></div>
       <div class="stat-card"><div class="label">Total Realisasi</div><div class="value plain">${fmtRp(totalRealisasi)}</div><div class="sub">${pct}% dari RAPB</div></div>
-      <div class="stat-card"><div class="label">Saldo Bulan Terakhir</div><div class="value plain">${fmtRp(totalSaldo)}</div></div>
+      <div class="stat-card"><div class="label">Saldo Bulan Terakhir</div><div class="value plain">${fmtRp(totalSaldo)}</div><div class="sub">Gabungan Zakat + Infak</div></div>
       <div class="stat-card"><div class="label">Bulan Tercatat</div><div class="value">${sp.dana.length}</div><div class="sub">Frekuensi bulanan</div></div>
     </div>
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Monitoring Dana Bulanan — ${sp.nama}</h3><p>RAPB, pencairan, realisasi, dan saldo per bulan.</p></div>
+        <div><h3>Monitoring Dana Bulanan — ${sp.nama}</h3><p>RAPB, pencairan, realisasi, dan saldo per bulan — dipisah sumber Zakat & Infak.</p></div>
         <button class="btn btn-primary btn-sm" onclick="openDanaModal('${m.id}','${sp.id}')">+ Tambah Bulan</button>
       </div>
       <table>
-        <thead><tr><th>Bulan</th><th class="num-cell">RAPB</th><th class="num-cell">Pencairan</th><th class="num-cell">Realisasi</th><th class="num-cell">Saldo</th><th>Status</th><th></th></tr></thead>
+        <thead>
+          <tr>
+            <th rowspan="2" style="vertical-align:bottom;">Bulan</th>
+            <th colspan="4" style="text-align:center; border-bottom:1px solid var(--line);">Zakat</th>
+            <th colspan="4" style="text-align:center; border-bottom:1px solid var(--line);">Infak</th>
+            <th rowspan="2" class="num-cell" style="vertical-align:bottom;">Saldo Total</th>
+            <th rowspan="2" style="vertical-align:bottom;">Status</th>
+            <th rowspan="2"></th>
+          </tr>
+          <tr>
+            <th class="num-cell">RAPB</th><th class="num-cell">Pencairan</th><th class="num-cell">Realisasi</th><th class="num-cell">Saldo</th>
+            <th class="num-cell">RAPB</th><th class="num-cell">Pencairan</th><th class="num-cell">Realisasi</th><th class="num-cell">Saldo</th>
+          </tr>
+        </thead>
         <tbody>
         ${sp.dana.map((d,i)=>{
-          const rasio = d.pencairan? d.realisasi/d.pencairan:0;
-          const st = d.pencairan===0?'crit':(rasio>=0.7?'ok':rasio>=0.3?'warn':'crit');
+          const { saldoZakat, saldoInfak, saldoTotal } = saldoDana(d);
+          const totalPencairan = (d.pencairanZakat||0)+(d.pencairanInfak||0);
+          const totalRealisasiRow = (d.realisasiZakat||0)+(d.realisasiInfak||0);
+          const rasio = totalPencairan? totalRealisasiRow/totalPencairan : 0;
+          const st = totalPencairan===0?'crit':(rasio>=0.7?'ok':rasio>=0.3?'warn':'crit');
           return `<tr>
             <td>${d.bulan}</td>
-            <td class="num-cell num-plain">${fmtRp(d.rapb)}</td>
-            <td class="num-cell num-plain">${fmtRp(d.pencairan)}</td>
-            <td class="num-cell num-plain">${fmtRp(d.realisasi)}</td>
-            <td class="num-cell num-plain">${fmtRp(d.saldo)}</td>
+            <td class="num-cell num-plain">${fmtRp(d.rapbZakat)}</td>
+            <td class="num-cell num-plain">${fmtRp(d.pencairanZakat)}</td>
+            <td class="num-cell num-plain">${fmtRp(d.realisasiZakat)}</td>
+            <td class="num-cell num-plain">${fmtRp(saldoZakat)}</td>
+            <td class="num-cell num-plain">${fmtRp(d.rapbInfak)}</td>
+            <td class="num-cell num-plain">${fmtRp(d.pencairanInfak)}</td>
+            <td class="num-cell num-plain">${fmtRp(d.realisasiInfak)}</td>
+            <td class="num-cell num-plain">${fmtRp(saldoInfak)}</td>
+            <td class="num-cell num-plain">${fmtRp(saldoTotal)}</td>
             <td><span class="chip ${statusChipClass[st]}">${Math.round(rasio*100)}%</span></td>
             <td class="row-actions">
               <button class="icon-btn" onclick="openEditDanaModal('${m.id}','${sp.id}',${i})">✎</button>
               <button class="icon-btn" onclick="hapusDana('${m.id}','${sp.id}',${i})">✕</button>
             </td>
           </tr>`;
-        }).join('') || `<tr><td colspan="7"><div class="empty-state">Belum ada data dana bulanan.</div></td></tr>`}
+        }).join('') || `<tr><td colspan="12"><div class="empty-state">Belum ada data dana bulanan.</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
+function danaFormFields(prefix, d){
+  d = d || {};
+  return `
+    <div class="field"><label>Bulan</label><input id="f_${prefix}bulan" value="${escAttr(d.bulan)}" placeholder="Contoh: Agustus 2026"></div>
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:2px 0 8px;">Sumber: Zakat</div>
+    <div class="field"><label>RAPB Zakat</label><input id="f_${prefix}rapbz" type="number" placeholder="0" value="${d.rapbZakat??''}"></div>
+    <div class="field"><label>Pencairan Zakat</label><input id="f_${prefix}pencz" type="number" placeholder="0" value="${d.pencairanZakat??''}"></div>
+    <div class="field"><label>Realisasi Zakat</label><input id="f_${prefix}realz" type="number" placeholder="0" value="${d.realisasiZakat??''}"></div>
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:2px 0 8px;">Sumber: Infak</div>
+    <div class="field"><label>RAPB Infak</label><input id="f_${prefix}rapbi" type="number" placeholder="0" value="${d.rapbInfak??''}"></div>
+    <div class="field"><label>Pencairan Infak</label><input id="f_${prefix}penci" type="number" placeholder="0" value="${d.pencairanInfak??''}"></div>
+    <div class="field"><label>Realisasi Infak</label><input id="f_${prefix}reali" type="number" placeholder="0" value="${d.realisasiInfak??''}"></div>
+    <div class="tag-note">Saldo Zakat, Saldo Infak, dan Saldo Total dihitung otomatis (Pencairan − Realisasi), tidak perlu diisi manual.</div>`;
+}
+function readDanaForm(prefix){
+  const bulan = document.getElementById(`f_${prefix}bulan`).value.trim();
+  return {
+    bulan,
+    rapbZakat:Number(document.getElementById(`f_${prefix}rapbz`).value)||0,
+    pencairanZakat:Number(document.getElementById(`f_${prefix}pencz`).value)||0,
+    realisasiZakat:Number(document.getElementById(`f_${prefix}realz`).value)||0,
+    rapbInfak:Number(document.getElementById(`f_${prefix}rapbi`).value)||0,
+    pencairanInfak:Number(document.getElementById(`f_${prefix}penci`).value)||0,
+    realisasiInfak:Number(document.getElementById(`f_${prefix}reali`).value)||0,
+  };
+}
 function openDanaModal(mid,spId){
   openModal(`
     <h3>Tambah Data Dana Bulanan</h3>
-    <div class="field"><label>Bulan</label><input id="f_dbulan" placeholder="Contoh: Agustus 2026"></div>
-    <div class="field"><label>RAPB</label><input id="f_drapb" type="number" placeholder="0"></div>
-    <div class="field"><label>Pencairan</label><input id="f_dpencairan" type="number" placeholder="0"></div>
-    <div class="field"><label>Realisasi</label><input id="f_drealisasi" type="number" placeholder="0"></div>
-    <div class="field"><label>Saldo</label><input id="f_dsaldo" type="number" placeholder="0"></div>
+    ${danaFormFields('d')}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanDana('${mid}','${spId}')">Simpan</button></div>
   `);
 }
 function simpanDana(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const bulan = document.getElementById('f_dbulan').value.trim();
-  if(!bulan) return;
-  sp.dana.push({
-    bulan,
-    rapb:Number(document.getElementById('f_drapb').value)||0,
-    pencairan:Number(document.getElementById('f_dpencairan').value)||0,
-    realisasi:Number(document.getElementById('f_drealisasi').value)||0,
-    saldo:Number(document.getElementById('f_dsaldo').value)||0,
-  });
+  const data = readDanaForm('d');
+  if(!data.bulan) return;
+  sp.dana.push(data);
   persistMitra(m);
   closeModal(); renderAll();
 }
@@ -1207,26 +1255,16 @@ function openEditDanaModal(mid,spId,idx){
   const d = sp.dana[idx];
   openModal(`
     <h3>Edit Data Dana Bulanan</h3>
-    <div class="field"><label>Bulan</label><input id="f_edbulan" value="${escAttr(d.bulan)}"></div>
-    <div class="field"><label>RAPB</label><input id="f_edrapb" type="number" value="${d.rapb}"></div>
-    <div class="field"><label>Pencairan</label><input id="f_edpencairan" type="number" value="${d.pencairan}"></div>
-    <div class="field"><label>Realisasi</label><input id="f_edrealisasi" type="number" value="${d.realisasi}"></div>
-    <div class="field"><label>Saldo</label><input id="f_edsaldo" type="number" value="${d.saldo}"></div>
+    ${danaFormFields('ed', d)}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditDana('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
   `);
 }
 function simpanEditDana(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const bulan = document.getElementById('f_edbulan').value.trim();
-  if(!bulan) return;
-  sp.dana[idx] = {
-    bulan,
-    rapb:Number(document.getElementById('f_edrapb').value)||0,
-    pencairan:Number(document.getElementById('f_edpencairan').value)||0,
-    realisasi:Number(document.getElementById('f_edrealisasi').value)||0,
-    saldo:Number(document.getElementById('f_edsaldo').value)||0,
-  };
+  const data = readDanaForm('ed');
+  if(!data.bulan) return;
+  sp.dana[idx] = data;
   persistMitra(m);
   closeModal(); renderAll();
 }
