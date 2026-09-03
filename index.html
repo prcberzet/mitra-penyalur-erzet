@@ -1247,7 +1247,7 @@ function renderDana(m,sp,c){
     </div>`;
 }
 const BULAN_NAMES = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
-function tahunRangeDana(){
+function tahunRangeUmum(){
   const now = new Date().getFullYear();
   const arr = [];
   for(let y=now-2; y<=now+3; y++) arr.push(y);
@@ -1263,7 +1263,7 @@ function parseBulanTahun(str){
 function bulanTahunFieldHtml(prefix, bulanStr){
   const { bulanNama, tahun } = parseBulanTahun(bulanStr);
   const monthOpts = BULAN_NAMES.map(b=>`<option value="${b}" ${b===bulanNama?'selected':''}>${b}</option>`).join('');
-  const yearOpts = tahunRangeDana().map(y=>`<option value="${y}" ${String(y)===String(tahun)?'selected':''}>${y}</option>`).join('');
+  const yearOpts = tahunRangeUmum().map(y=>`<option value="${y}" ${String(y)===String(tahun)?'selected':''}>${y}</option>`).join('');
   return `
     <div style="display:flex; gap:10px;">
       <div class="field" style="flex:2;"><label>Bulan</label><select id="f_${prefix}bulanNama">${monthOpts}</select></div>
@@ -1366,7 +1366,7 @@ function renderAktivitas(m,sp,c){
         <button class="btn btn-primary btn-sm" onclick="openMingguanModal('${m.id}','${sp.id}')">+ Tambah Minggu</button>
       </div>
       <table>
-        <thead><tr><th>Minggu</th><th>Tanggal Kirim</th><th>Berkas</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Minggu</th><th>Tanggal Dikirim Oleh Mitra</th><th>Berkas</th><th>Status</th><th></th></tr></thead>
         <tbody>
         ${sp.aktivitasMingguan.map((a,i)=>`
           <tr>
@@ -1405,11 +1405,33 @@ function hapusHarian(mid,spId,idx){
   persistMitra(m);
   renderAll();
 }
+/* Label minggu format: "Minggu ke-{pekan} {Bulan} {Tahun}" — pekan & bulan/tahun via dropdown */
+function parseMingguLabel(str){
+  const now = new Date();
+  if(!str) return { pekan:1, bulanNama:BULAN_NAMES[now.getMonth()], tahun:now.getFullYear() };
+  const mMatch = str.match(/ke-(\d+)/);
+  const pekan = mMatch ? Number(mMatch[1]) : 1;
+  const rest = str.replace(/^.*?ke-\d+\s*/,'').trim();
+  const { bulanNama, tahun } = parseBulanTahun(rest);
+  return { pekan, bulanNama, tahun };
+}
+function mingguFieldHtml(prefix, mingguStr){
+  const { pekan, bulanNama, tahun } = parseMingguLabel(mingguStr);
+  const pekanOpts = [1,2,3,4,5].map(p=>`<option value="${p}" ${p===pekan?'selected':''}>Ke-${p}</option>`).join('');
+  const monthOpts = BULAN_NAMES.map(b=>`<option value="${b}" ${b===bulanNama?'selected':''}>${b}</option>`).join('');
+  const yearOpts = tahunRangeUmum().map(y=>`<option value="${y}" ${String(y)===String(tahun)?'selected':''}>${y}</option>`).join('');
+  return `
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label>Pekan</label><select id="f_${prefix}mpekan">${pekanOpts}</select></div>
+      <div class="field" style="flex:2;"><label>Bulan</label><select id="f_${prefix}mbulan">${monthOpts}</select></div>
+      <div class="field" style="flex:1;"><label>Tahun</label><select id="f_${prefix}mtahun">${yearOpts}</select></div>
+    </div>`;
+}
 function openMingguanModal(mid,spId){
   openModal(`
     <h3>Tambah Weekly Report</h3>
-    <div class="field"><label>Label Minggu</label><input id="f_mminggu" placeholder="Contoh: Minggu ke-1 Agustus 2026"></div>
-    <div class="field"><label>Tanggal Kirim</label><input id="f_mtgl" type="date"></div>
+    ${mingguFieldHtml('m')}
+    <div class="field"><label>Tanggal Dikirim Oleh Mitra</label><input id="f_mtgl" type="date"></div>
     <div class="field"><label>Tautan Google Drive</label><input id="f_mlink" placeholder="https://drive.google.com/..."></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanMingguan('${mid}','${spId}')">Simpan</button></div>
   `);
@@ -1417,8 +1439,10 @@ function openMingguanModal(mid,spId){
 function simpanMingguan(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const minggu = document.getElementById('f_mminggu').value.trim();
-  if(!minggu) return;
+  const pekan = document.getElementById('f_mmpekan').value;
+  const bulan = document.getElementById('f_mmbulan').value;
+  const tahun = document.getElementById('f_mmtahun').value;
+  const minggu = `Minggu ke-${pekan} ${bulan} ${tahun}`;
   sp.aktivitasMingguan.unshift({minggu, tanggal:document.getElementById('f_mtgl').value||new Date().toISOString().slice(0,10), link:document.getElementById('f_mlink').value, status:'ada'});
   persistMitra(m);
   closeModal(); renderAll();
