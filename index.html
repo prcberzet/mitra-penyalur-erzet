@@ -1424,7 +1424,29 @@ function hapusDana(mid,spId,idx){
 }
 
 /* --- AKTIVITAS --- */
+/* Kesesuaian SLA Weekly Report: deadline tiap Selasa per pekan.
+   Senin/Selasa = tepat waktu (100%), Rabu = 75%, Kamis-Minggu = 50%. */
+function dayOfWeekFromTanggal(tanggal){
+  const [y,mo,d] = tanggal.split('-').map(Number);
+  return new Date(y, mo-1, d).getDay(); // 0=Min,1=Sen,2=Sel,3=Rab,4=Kam,5=Jum,6=Sab
+}
+function slaWeekly(tanggal){
+  if(!tanggal) return { pct:null, label:'Belum Dikirim' };
+  const day = dayOfWeekFromTanggal(tanggal);
+  if(day===1 || day===2) return { pct:100, label:'Tepat Waktu' };
+  if(day===3) return { pct:75, label:'Terlambat 1 Hari' };
+  return { pct:50, label:'Terlambat' };
+}
+function slaBadge(tanggal){
+  const { pct, label } = slaWeekly(tanggal);
+  if(pct===null) return `<span class="chip" style="background:var(--bg); color:var(--ink-faint);">${label}</span>`;
+  const cls = pct===100?'chip-ok':pct===75?'chip-warn':'chip-crit';
+  return `<span class="chip ${cls}">${pct}% · ${label}</span>`;
+}
 function renderAktivitas(m,sp,c){
+  const mingguSorted = sp.aktivitasMingguan
+    .map((a,i)=>({a,i}))
+    .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
   c.innerHTML = `
     <div class="panel">
       <div class="panel-head">
@@ -1446,20 +1468,24 @@ function renderAktivitas(m,sp,c){
     </div>
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Weekly Report (Pekanan)</h3><p>Laporan mingguan aktivitas mitra.</p></div>
+        <div><h3>Weekly Report (Pekanan)</h3><p>Laporan mingguan aktivitas mitra, diurutkan berdasarkan tanggal dikirim terbaru. Deadline setiap Selasa.</p></div>
         <button class="btn btn-primary btn-sm" onclick="openMingguanModal('${m.id}','${sp.id}')">+ Tambah Minggu</button>
       </div>
       <table>
-        <thead><tr><th>Minggu</th><th>Tanggal Dikirim Oleh Mitra</th><th>Berkas</th><th>Status</th><th></th></tr></thead>
+        <thead><tr><th>Pekan</th><th>Tanggal Dikirim Oleh Mitra</th><th>Berkas</th><th>Status</th><th>Kesesuaian SLA</th><th></th></tr></thead>
         <tbody>
-        ${sp.aktivitasMingguan.map((a,i)=>`
+        ${mingguSorted.map(({a,i})=>`
           <tr>
             <td>${a.minggu}</td>
             <td class="mono">${fmtDate(a.tanggal)}</td>
             <td class="link-cell">${a.link?`<a href="${a.link}" target="_blank">Lihat berkas ↗</a>`:'—'}</td>
             <td><span class="chip ${a.status==='ada'?'chip-ok':'chip-crit'}">${a.status==='ada'?'Diterima':'Belum'}</span></td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusMingguan('${m.id}','${sp.id}',${i})">✕</button></td>
-          </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">Belum ada weekly report.</div></td></tr>`}
+            <td>${slaBadge(a.tanggal)}</td>
+            <td class="row-actions">
+              <button class="icon-btn" onclick="openEditMingguanModal('${m.id}','${sp.id}',${i})">✎</button>
+              <button class="icon-btn" onclick="hapusMingguan('${m.id}','${sp.id}',${i})">✕</button>
+            </td>
+          </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">Belum ada weekly report.</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
@@ -1511,23 +1537,53 @@ function mingguFieldHtml(prefix, mingguStr){
       <div class="field" style="flex:1;"><label>Tahun</label><select id="f_${prefix}mtahun">${yearOpts}</select></div>
     </div>`;
 }
+function mingguanFormFields(prefix, a){
+  a = a || {};
+  return `
+    ${mingguFieldHtml(prefix, a.minggu)}
+    <div class="field"><label>Tanggal Dikirim Oleh Mitra</label><input id="f_${prefix}tgl" type="date" value="${escAttr(a.tanggal)}"></div>
+    <div class="field"><label>Tautan Google Drive</label><input id="f_${prefix}link" placeholder="https://drive.google.com/..." value="${escAttr(a.link)}"></div>
+    <div class="tag-note">Kesesuaian SLA (Tepat Waktu / Terlambat) dihitung otomatis dari tanggal dikirim — deadline tiap hari Selasa.</div>`;
+}
+function readMingguanForm(prefix){
+  const pekan = document.getElementById(`f_${prefix}mpekan`).value;
+  const bulan = document.getElementById(`f_${prefix}mbulan`).value;
+  const tahun = document.getElementById(`f_${prefix}mtahun`).value;
+  return {
+    minggu: `Minggu ke-${pekan} ${bulan} ${tahun}`,
+    tanggal: document.getElementById(`f_${prefix}tgl`).value || new Date().toISOString().slice(0,10),
+    link: document.getElementById(`f_${prefix}link`).value,
+    status:'ada',
+  };
+}
 function openMingguanModal(mid,spId){
   openModal(`
     <h3>Tambah Weekly Report</h3>
-    ${mingguFieldHtml('m')}
-    <div class="field"><label>Tanggal Dikirim Oleh Mitra</label><input id="f_mtgl" type="date"></div>
-    <div class="field"><label>Tautan Google Drive</label><input id="f_mlink" placeholder="https://drive.google.com/..."></div>
+    ${mingguanFormFields('m')}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanMingguan('${mid}','${spId}')">Simpan</button></div>
   `);
 }
 function simpanMingguan(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const pekan = document.getElementById('f_mmpekan').value;
-  const bulan = document.getElementById('f_mmbulan').value;
-  const tahun = document.getElementById('f_mmtahun').value;
-  const minggu = `Minggu ke-${pekan} ${bulan} ${tahun}`;
-  sp.aktivitasMingguan.unshift({minggu, tanggal:document.getElementById('f_mtgl').value||new Date().toISOString().slice(0,10), link:document.getElementById('f_mlink').value, status:'ada'});
+  sp.aktivitasMingguan.push(readMingguanForm('m'));
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function openEditMingguanModal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const a = sp.aktivitasMingguan[idx];
+  openModal(`
+    <h3>Edit Weekly Report</h3>
+    ${mingguanFormFields('em', a)}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditMingguan('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+  `);
+}
+function simpanEditMingguan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.aktivitasMingguan[idx] = readMingguanForm('em');
   persistMitra(m);
   closeModal(); renderAll();
 }
