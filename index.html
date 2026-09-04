@@ -2325,13 +2325,12 @@ function exportRaport(mid,spId,idx){
   doc.text(line1, titleCenterX, 19, {align:'center'});
   doc.text(line2, titleCenterX, 25.5, {align:'center'});
 
-  // Kanan: No. Formulir / Tahun / Periode / Tanggal Terbit — rata kiri
+  // Kanan: No. Formulir / Tahun / Periode — rata kiri
   doc.setFont('helvetica','normal');
   doc.setFontSize(9);
   doc.text(`No. Formulir : ${noFormulir}`, rightZoneStart, 15, {align:'left'});
   doc.text(`Tahun : ${r.tahun}`, rightZoneStart, 20, {align:'left'});
   doc.text(`Periode : ${q.label}`, rightZoneStart, 25, {align:'left'});
-  doc.text(`Tanggal Terbit : ${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}`, rightZoneStart, 30, {align:'left'});
 
   doc.setDrawColor(30); doc.setLineWidth(0.4);
   doc.line(marginL, 36, contentR, 36);
@@ -2388,32 +2387,39 @@ function exportRaport(mid,spId,idx){
     finalY += rekomendasiLines.length*5;
   }
 
-  /* --- PENANDATANGAN (3 kolom: Disusun / Diperiksa / Disahkan) --- */
+  /* --- TANGGAL TERBIT + PENANDATANGAN ---
+     Disusun Oleh (kiri) & Diperiksa Oleh (kanan) sebaris, Disahkan Oleh di baris bawah posisi tengah. */
   const pageH = doc.internal.pageSize.getHeight();
-  const sigBlockH = 45;
+  const sigBlockH = 14 /*tanggal terbit*/ + 38*2 /*2 baris ttd*/;
   if(finalY + sigBlockH > pageH - 15){ doc.addPage(); finalY = 20; }
+
   finalY += 12;
-  const cols = [
-    {label:'Disusun Oleh', p: pejabatList.find(p=>p.id===r.disusunOlehId)},
-    {label:'Diperiksa Oleh', p: pejabatList.find(p=>p.id===r.diperiksaOlehId)},
-    {label:'Disahkan Oleh', p: pejabatList.find(p=>p.id===r.disahkanOlehId)},
-  ];
-  const colW = (contentR-marginL)/3;
-  cols.forEach((c,ci)=>{
-    const cx = marginL + ci*colW;
-    doc.setFont('helvetica','normal'); doc.setFontSize(9);
-    doc.text(c.label, cx, finalY, {align:'left'});
-    if(c.p && c.p.ttd){
-      try{ doc.addImage(c.p.ttd, cx, finalY+3, 30, 16); }catch(e){ console.error('Gagal menyisipkan tanda tangan:', e); }
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20);
+  doc.text(`Tanggal Terbit : ${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}`, pageW/2, finalY, {align:'center'});
+  finalY += 14;
+
+  function drawSignatureBlock(label, p, anchorX, align){
+    const imgW=30, imgH=16, lineW=45;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(20);
+    doc.text(label, anchorX, finalY, {align});
+    const imgX = align==='left' ? anchorX : align==='right' ? anchorX-imgW : anchorX-imgW/2;
+    if(p && p.ttd){
+      try{ doc.addImage(p.ttd, imgX, finalY+3, imgW, imgH); }catch(e){ console.error('Gagal menyisipkan tanda tangan:', e); }
     }
+    const lineX1 = align==='left' ? anchorX : align==='right' ? anchorX-lineW : anchorX-lineW/2;
     doc.setDrawColor(120); doc.setLineWidth(0.2);
-    doc.line(cx, finalY+22, cx+45, finalY+22);
+    doc.line(lineX1, finalY+22, lineX1+lineW, finalY+22);
     doc.setFont('helvetica','bold'); doc.setFontSize(9);
-    doc.text(c.p?c.p.nama:'—', cx, finalY+27);
+    doc.text(p?p.nama:'—', anchorX, finalY+27, {align});
     doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100);
-    doc.text(c.p?c.p.jabatan:'—', cx, finalY+31);
+    doc.text(p?p.jabatan:'—', anchorX, finalY+31, {align});
     doc.setTextColor(20);
-  });
+  }
+
+  drawSignatureBlock('Disusun Oleh', pejabatList.find(p=>p.id===r.disusunOlehId), marginL, 'left');
+  drawSignatureBlock('Diperiksa Oleh', pejabatList.find(p=>p.id===r.diperiksaOlehId), contentR, 'right');
+  finalY += 38;
+  drawSignatureBlock('Disahkan Oleh', pejabatList.find(p=>p.id===r.disahkanOlehId), pageW/2, 'center');
 
   doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140);
   doc.text(`Dokumen ini dibuat otomatis oleh Menara Kemitraan pada ${new Date().toLocaleString('id-ID')}.`, marginL, pageH-10);
