@@ -639,6 +639,10 @@
   })();
 </script>
 
+<!-- jsPDF + autotable — dipakai oleh exportRaport() untuk membuat file PDF Raport Kinerja -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
 <script>
 /* =========================================================================
    DATA MODEL
@@ -670,6 +674,7 @@ let mitraList = [
   {
     id:'m1',
     nama:'Yayasan Pendidikan Nusantara',
+    singkatan:'YPN',
     direktur:'Prof. Ahmad Suryana',
     pic:'Dewi Anjani',
     alamat:'Jl. Pendidikan No. 12, Bandung, Jawa Barat',
@@ -730,6 +735,7 @@ let mitraList = [
   {
     id:'m2',
     nama:'Komunitas Peduli Lingkungan Hijau',
+    singkatan:'KPLH',
     direktur:'Ratna Kusuma',
     pic:'Bagas Wirawan',
     alamat:'Jl. Cagar Alam No. 5, Bogor, Jawa Barat',
@@ -812,6 +818,13 @@ function slugify(str){
     .replace(/[^a-z0-9]+/g,'-')
     .replace(/^-+|-+$/g,'');
 }
+/* Fallback singkatan mitra (dipakai di No. Formulir Raport) kalau field Singkatan Mitra belum diisi manual:
+   ambil huruf awal tiap kata bermakna (skip kata umum seperti "Yayasan", "dan", "untuk"). */
+function autoSingkatan(nama){
+  const skip = ['yayasan','komunitas','lembaga','perkumpulan','forum','dan','untuk','bagi','di','ke','dari'];
+  const words = String(nama||'').split(/\s+/).filter(w=>w && !skip.includes(w.toLowerCase()));
+  return words.map(w=>w[0].toUpperCase()).join('') || 'MTR';
+}
 function computeBasePath(){
   const segs = location.pathname.split('/');
   return segs.slice(0, 1+PATH_SEGMENTS_TO_KEEP).join('/');
@@ -860,6 +873,7 @@ window.addEventListener('popstate', applyRouteFromUrl);
 /* ---------------------------- REALTIME SYNC ----------------------------- */
 function normalizeMitra(m){
   m.legalitas = m.legalitas || [];
+  m.singkatan = m.singkatan || autoSingkatan(m.nama);
   m.subProgram = (m.subProgram && m.subProgram.length) ? m.subProgram : [defaultSubProgram()];
   m.subProgram.forEach(sp=>{
     sp.dana = sp.dana || [];
@@ -2131,54 +2145,105 @@ function toggleRaportPin(cardEl){
   if(cardEl) cardEl.classList.toggle('pinned');
 }
 /* Export Raport Kinerja jadi file HTML mandiri yang bisa dibuka/dicetak/dibagikan. */
+/* Export Raport Kinerja → file PDF resmi (Header: logo + judul + No. Formulir/Tahun/Periode;
+   Identitas Dokumen: Mitra/Program/Sub Program; Tabel Aspek Penilaian; Nilai Akhir). */
 function exportRaport(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
   const r = sp.evaluasi.raport[idx];
+  if(!window.jspdf || !window.jspdf.jsPDF){
+    alert('Modul pembuat PDF belum termuat (perlu koneksi internet untuk memuat jsPDF dari CDN). Coba lagi setelah halaman selesai dimuat penuh.');
+    return;
+  }
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit:'mm', format:'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const marginL = 15, marginR = 15;
+  const contentR = pageW - marginR;
+
   const aspects = raportAspekList(sp,r);
   const overall = raportOverallPct(sp,r);
   const grade = gradeFromPct(overall);
-  const qLabel = QUARTALS.find(q=>q.key===r.kuartal)?.label || r.kuartal;
-  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Raport Kinerja — ${m.nama} — ${sp.nama}</title>
-<style>
-  body{font-family:Arial,Helvetica,sans-serif; padding:32px; color:#1a1a1a; max-width:800px; margin:0 auto;}
-  h1{font-size:20px; margin-bottom:4px;}
-  h2{font-size:15px; margin-top:28px; margin-bottom:6px;}
-  .meta{color:#555; font-size:13px; margin-top:2px;}
-  .score{font-size:26px; font-weight:700; margin-top:14px;}
-  table{width:100%; border-collapse:collapse; margin-top:8px;}
-  th,td{border:1px solid #ccc; padding:8px; text-align:left; font-size:13px; vertical-align:top;}
-  th{background:#f4f4f4;}
-  .footer{color:#888; font-size:11px; margin-top:32px; border-top:1px solid #eee; padding-top:12px;}
-</style></head><body>
-  <h1>Raport Kinerja Mitra</h1>
-  <div class="meta">Mitra: <strong>${m.nama}</strong></div>
-  <div class="meta">Sub Program: <strong>${sp.nama}</strong></div>
-  <div class="meta">Periode: <strong>${qLabel} ${r.tahun}</strong></div>
-  <div class="score">Nilai Akhir: ${overall===null?'-':overall+'%'} (${grade})</div>
-  ${r.catatan?`<div class="meta" style="margin-top:10px;">Catatan: ${r.catatan}</div>`:''}
-  <h2>Rincian Aspek Penilaian</h2>
-  <table>
-    <thead><tr><th>Aspek</th><th>Rincian</th><th>Nilai</th></tr></thead>
-    <tbody>
-    ${aspects.map(a=>`<tr>
-      <td>${a.no}. ${a.nama}</td>
-      <td>${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('<br>')}</td>
-      <td>${a.pct===null?'Belum tersedia':a.pct+'%'}</td>
-    </tr>`).join('')}
-    </tbody>
-  </table>
-  <div class="footer">Diekspor pada ${new Date().toLocaleString('id-ID')} dari Menara Kemitraan.</div>
-</body></html>`;
-  const blob = new Blob([html], {type:'text/html'});
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `Raport-${slugify(m.nama)}-${slugify(sp.nama)}-${r.kuartal}-${r.tahun}.html`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  const q = QUARTALS.find(x=>x.key===r.kuartal) || QUARTALS[0];
+  const nomorUrut = idx + 1; // urutan penerbitan raport untuk sub program ini
+  const noFormulir = `${nomorUrut}/PRCB/PKMP/${m.singkatan || autoSingkatan(m.nama)}`;
+  const namaProgram = 'Mitra Penyalur'; // TODO: sesuaikan bila app menambah field "Program" tersendiri
+
+  /* --- HEADER --- */
+  // Kiri: placeholder logo (ganti dengan doc.addImage(base64Logo,'PNG',x,y,w,h) bila logo sudah tersedia)
+  doc.setDrawColor(180); doc.setLineWidth(0.2);
+  doc.rect(marginL, 12, 20, 20);
+  doc.setFontSize(6.5); doc.setTextColor(150);
+  doc.text('LOGO', marginL+10, 20, {align:'center'});
+  doc.text('RUMAH ZAKAT', marginL+10, 23.5, {align:'center'});
+
+  // Tengah: judul
+  doc.setTextColor(20);
+  doc.setFont('helvetica','bold');
+  doc.setFontSize(13);
+  doc.text('PENILAIAN KINERJA MITRA PENYALUR', pageW/2, 19, {align:'center'});
+  doc.text('RUMAH ZAKAT', pageW/2, 25.5, {align:'center'});
+
+  // Kanan: No. Formulir / Tahun / Periode
+  doc.setFont('helvetica','normal');
+  doc.setFontSize(9);
+  doc.text(`No. Formulir : ${noFormulir}`, contentR, 15, {align:'right'});
+  doc.text(`Tahun : ${r.tahun}`, contentR, 20, {align:'right'});
+  doc.text(`Periode : ${q.label}`, contentR, 25, {align:'right'});
+
+  doc.setDrawColor(30); doc.setLineWidth(0.4);
+  doc.line(marginL, 36, contentR, 36);
+
+  /* --- IDENTITAS DOKUMEN --- */
+  let y = 44;
+  doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(20);
+  doc.text('IDENTITAS DOKUMEN', marginL, y);
+  y += 6;
+  doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+  doc.text(`Mitra Penyalur : ${m.nama}`, marginL, y);
+  y += 6;
+  doc.text(`Program : ${namaProgram}`, marginL, y);
+  doc.text(`Sub Program : ${sp.nama}`, marginL + 95, y);
+  y += 10;
+
+  /* --- TABEL ASPEK PENILAIAN --- */
+  doc.setFont('helvetica','bold'); doc.setFontSize(10);
+  doc.text('TABEL ASPEK PENILAIAN', marginL, y);
+  y += 4;
+
+  const rows = aspects.map(a=>[
+    String(a.no),
+    a.nama,
+    a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('\n'),
+    a.pct===null?'Belum tersedia':`${a.pct}%`,
+  ]);
+  doc.autoTable({
+    startY: y,
+    margin: { left: marginL, right: marginR },
+    head: [['No','Aspek Penilaian','Rincian Perhitungan','Nilai']],
+    body: rows,
+    styles: { fontSize: 8.5, cellPadding: 2.5, valign:'top', lineColor:[200,200,200], lineWidth:0.15 },
+    headStyles: { fillColor:[230,236,233], textColor:20, fontStyle:'bold' },
+    columnStyles: { 0:{cellWidth:8, halign:'center'}, 1:{cellWidth:48}, 3:{cellWidth:22, halign:'center'} },
+  });
+
+  let finalY = doc.lastAutoTable.finalY + 10;
+  doc.setFont('helvetica','bold'); doc.setFontSize(12);
+  doc.text(`Nilai Akhir Raport Kinerja : ${overall===null?'-':overall+'%'} (${grade})`, marginL, finalY);
+
+  if(r.catatan){
+    finalY += 8;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    const catatanLines = doc.splitTextToSize(`Catatan: ${r.catatan}`, contentR-marginL);
+    doc.text(catatanLines, marginL, finalY);
+    finalY += catatanLines.length*5;
+  }
+
+  const pageH = doc.internal.pageSize.getHeight();
+  doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140);
+  doc.text(`Dokumen ini dibuat otomatis oleh Menara Kemitraan pada ${new Date().toLocaleString('id-ID')}.`, marginL, pageH-10);
+
+  doc.save(`Raport-${slugify(m.nama)}-${slugify(sp.nama)}-${r.kuartal}-${r.tahun}.pdf`);
 }
 function openJadwalModal(mid,spId){
   openModal(`
@@ -2280,6 +2345,7 @@ function openMitraModal(){
   openModal(`
     <h3>Tambah Mitra Baru</h3>
     <div class="field"><label>Nama Mitra</label><input id="f_nama" placeholder="Contoh: Yayasan ..."></div>
+    <div class="field"><label>Singkatan Mitra</label><input id="f_singkatan" placeholder="Contoh: CSF (dipakai di No. Formulir Raport Kinerja)"></div>
     <div class="field"><label>Nama Direktur</label><input id="f_direktur" placeholder="Nama direktur / pimpinan mitra"></div>
     <div class="field"><label>Nama PIC</label><input id="f_pic" placeholder="Nama penanggung jawab harian"></div>
     <div class="field"><label>Alamat Kantor Mitra</label><input id="f_alamat" placeholder="Alamat lengkap kantor"></div>
@@ -2297,6 +2363,7 @@ function simpanMitra(){
   const id = newMitraId();
   const m = {
     id, nama,
+    singkatan: document.getElementById('f_singkatan').value||autoSingkatan(nama),
     direktur: document.getElementById('f_direktur').value||'—',
     pic: document.getElementById('f_pic').value||'—',
     alamat: document.getElementById('f_alamat').value||'—',
@@ -2333,6 +2400,7 @@ function openEditMitraModal(mid){
   openModal(`
     <h3>Edit Informasi Mitra</h3>
     <div class="field"><label>Nama Mitra</label><input id="f_enama" value="${escAttr(m.nama)}"></div>
+    <div class="field"><label>Singkatan Mitra</label><input id="f_esingkatan" value="${escAttr(m.singkatan)}" placeholder="Contoh: CSF (dipakai di No. Formulir Raport Kinerja)"></div>
     <div class="field"><label>Nama Direktur</label><input id="f_edirektur" value="${escAttr(m.direktur)}"></div>
     <div class="field"><label>Nama PIC</label><input id="f_epic" value="${escAttr(m.pic)}"></div>
     <div class="field"><label>Alamat Kantor Mitra</label><input id="f_ealamat" value="${escAttr(m.alamat)}"></div>
@@ -2348,6 +2416,7 @@ function simpanEditMitra(mid){
   const nama = document.getElementById('f_enama').value.trim();
   if(!nama) return;
   m.nama = nama;
+  m.singkatan = document.getElementById('f_esingkatan').value||autoSingkatan(nama);
   m.direktur = document.getElementById('f_edirektur').value||'—';
   m.pic = document.getElementById('f_epic').value||'—';
   m.alamat = document.getElementById('f_ealamat').value||'—';
