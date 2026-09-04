@@ -409,6 +409,26 @@
     font-family:inherit; background:var(--surface); color:var(--ink);
   }
 
+  /* Kartu Raport Kinerja: rincian aspek hanya tampil saat hover judul, atau permanen kalau di-klik (pinned) */
+  .raport-card{
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between;
+    padding:12px 0; border-bottom:1px solid var(--line);
+  }
+  .raport-card:last-child{border-bottom:none;}
+  .raport-title{flex:1; min-width:220px; cursor:pointer; display:flex; flex-direction:column; gap:3px;}
+  .raport-title .name{font-size:13.5px; font-weight:600;}
+  .raport-title .date{font-size:11.5px; color:var(--ink-faint);}
+  .raport-caret{display:inline-block; margin-left:6px; font-size:10px; color:var(--ink-soft); transition:transform .25s ease;}
+  .raport-title:hover .raport-caret{transform:rotate(90deg);}
+  .raport-card.pinned .raport-title .raport-caret{transform:rotate(90deg);}
+  .raport-actions{display:flex; gap:6px; flex-shrink:0;}
+  .raport-aspek{
+    flex-basis:100%; max-height:0; overflow:hidden;
+    transition:max-height .35s ease, margin-top .35s ease; margin-top:0;
+  }
+  .raport-title:hover ~ .raport-aspek{ max-height:1000px; margin-top:10px; }
+  .raport-card.pinned .raport-aspek{ max-height:1000px; margin-top:10px; }
+
   /* Overview grid of all mitra */
   .overview-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:14px;}
   .overview-card{
@@ -680,13 +700,13 @@ let mitraList = [
           {minggu:'Minggu ke-3 Juli 2026', tanggal:'2026-07-18', link:'https://drive.google.com/...', status:'ada'},
         ],
         laporanBulanan:[
-          {bulan:'Juni 2026', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-04',
+          {bulan:'Juni 2026', zreportTanggalKirim:'2026-06-29', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-04',
             penerima:{link:'https://drive.google.com/...', totalPP:120, totalLM:45},
             keuangan:{link:'https://drive.google.com/...'},
             dokumentasi:{link:'https://drive.google.com/...'},
             tertulis:{link:'https://drive.google.com/...'},
             ppt:{link:'https://drive.google.com/...'}},
-          {bulan:'Juli 2026', targetTanggal:'2026-08-05', diterimaTanggal:'',
+          {bulan:'Juli 2026', zreportTanggalKirim:'', targetTanggal:'2026-08-05', diterimaTanggal:'',
             penerima:{link:'', totalPP:0, totalLM:0},
             keuangan:{link:''}, dokumentasi:{link:''}, tertulis:{link:''}, ppt:{link:''}},
         ],
@@ -737,7 +757,7 @@ let mitraList = [
           {minggu:'Minggu ke-2 Juli 2026', tanggal:'2026-07-11', link:'', status:'belum'},
         ],
         laporanBulanan:[
-          {bulan:'Juni 2026', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-06',
+          {bulan:'Juni 2026', zreportTanggalKirim:'2026-07-01', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-06',
             penerima:{link:'https://drive.google.com/...', totalPP:80, totalLM:30},
             keuangan:{link:''},
             dokumentasi:{link:'https://drive.google.com/...'},
@@ -849,6 +869,7 @@ function normalizeMitra(m){
       const wrapLink = v => (v && typeof v==='object') ? {link:v.link||''} : {link:''};
       return {
         bulan: l.bulan||'',
+        zreportTanggalKirim: l.zreportTanggalKirim||'',
         targetTanggal: l.targetTanggal||'',
         diterimaTanggal: l.diterimaTanggal||'',
         penerima: (l.penerima && typeof l.penerima==='object') ? {link:l.penerima.link||'', totalPP:l.penerima.totalPP||0, totalLM:l.penerima.totalLM||0} : {link:'', totalPP:0, totalLM:0},
@@ -1646,6 +1667,29 @@ function slaLaporanBadge(target, diterima){
   const cls = pct===100?'chip-ok':pct===50?'chip-warn':'chip-crit';
   return `<span class="chip ${cls}">${pct}% · ${label}</span>`;
 }
+/* SLA ZReport: target otomatis = tanggal akhir bulan laporan (bukan input manual).
+   Tepat waktu = 100%, terlambat 1 hari = 50%, terlambat >1 hari = 0%. */
+function endOfMonthStr(bulanStr){
+  const { bulanNama, tahun } = parseBulanTahun(bulanStr);
+  const idx = BULAN_NAMES.indexOf(bulanNama);
+  if(idx<0 || !tahun) return '';
+  const lastDay = new Date(Number(tahun), idx+1, 0).getDate();
+  return `${tahun}-${String(idx+1).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+}
+function slaZReport(l){
+  const target = endOfMonthStr(l.bulan);
+  if(!target || !l.zreportTanggalKirim) return { pct:null, label:'Belum Dikirim' };
+  const diff = Math.round(toUTCDays(l.zreportTanggalKirim) - toUTCDays(target));
+  if(diff<=0) return { pct:100, label:'Tepat Waktu' };
+  if(diff===1) return { pct:50, label:'Terlambat 1 Hari' };
+  return { pct:0, label:'Terlambat >1 Hari' };
+}
+function slaZReportBadge(l){
+  const { pct, label } = slaZReport(l);
+  if(pct===null) return `<span class="chip" style="background:var(--bg); color:var(--ink-faint);">ZReport: ${label}</span>`;
+  const cls = pct===100?'chip-ok':pct===50?'chip-warn':'chip-crit';
+  return `<span class="chip ${cls}">ZReport ${pct}% · ${label}</span>`;
+}
 function isKomponenLengkap(obj){ return !!(obj && obj.link && String(obj.link).trim()); }
 function komponenCell(obj, extraHtml){
   const ok = isKomponenLengkap(obj);
@@ -1669,7 +1713,7 @@ function renderLaporan(m,sp,c){
           const danaEntry = sp.dana.find(d=>d.bulan===l.bulan);
           const totalRealisasi = danaEntry ? (danaEntry.realisasiZakat||0)+(danaEntry.realisasiInfak||0) : 0;
           const pmMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div>`;
-          const keuMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div>`;
+          const keuMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div><div style="margin-top:4px;">${slaZReportBadge(l)}</div>`;
           return `<tr>
             <td>${l.bulan}</td>
             <td>${slaLaporanBadge(l.targetTanggal, l.diterimaTanggal)}</td>
@@ -1697,6 +1741,8 @@ function laporanFormFields(prefix, l){
   const ppt = l.ppt || {};
   return `
     ${bulanTahunFieldHtml(prefix, l.bulan)}
+    <div class="field"><label>Tanggal Kirim Laporan ZReport</label><input id="f_${prefix}zreport" type="date" value="${escAttr(l.zreportTanggalKirim)}"></div>
+    <div class="tag-note">Target ZReport otomatis = tanggal akhir bulan laporan. Tepat waktu = 100%, terlambat 1 hari = 50%, terlambat &gt;1 hari = 0%.</div>
     <div style="display:flex; gap:10px;">
       <div class="field" style="flex:1;"><label>Tanggal Target Penerimaan Laporan</label><input id="f_${prefix}target" type="date" value="${escAttr(l.targetTanggal)}"></div>
       <div class="field" style="flex:1;"><label>Tanggal Diterima Lembaga</label><input id="f_${prefix}diterima" type="date" value="${escAttr(l.diterimaTanggal)}"></div>
@@ -1729,6 +1775,7 @@ function readLaporanForm(prefix){
   const bulanTahun = document.getElementById(`f_${prefix}bulanTahun`).value;
   return {
     bulan: `${bulanNama} ${bulanTahun}`,
+    zreportTanggalKirim: document.getElementById(`f_${prefix}zreport`).value,
     targetTanggal: document.getElementById(`f_${prefix}target`).value,
     diterimaTanggal: document.getElementById(`f_${prefix}diterima`).value,
     penerima: {
@@ -1821,8 +1868,8 @@ function rilisBeritaPct(sp,kuartal,tahun){ return harianInQuarter(sp,kuartal,tah
 function zreportPct(sp,kuartal,tahun){
   const entries = laporanInQuarter(sp,kuartal,tahun);
   if(!entries.length) return null;
-  const done = entries.filter(l=>isKomponenLengkap(l.keuangan)).length;
-  return Math.round(done/entries.length*100);
+  const total = entries.reduce((a,l)=>{ const s=slaZReport(l); return a+(s.pct===null?0:s.pct); },0);
+  return Math.round(total/entries.length);
 }
 function dssPct(sp,kuartal,tahun){
   const entries = danaInQuarter(sp,kuartal,tahun);
@@ -1896,17 +1943,17 @@ function renderEvaluasi(m,sp,c){
       ${sp.evaluasi.raport.map((r,i)=>{
         const aspects = raportAspekList(sp,r);
         const overall = raportOverallPct(sp,r);
-        return `<div class="legalitas-item" style="flex-direction:column; align-items:stretch; gap:10px;">
-          <div style="display:flex; justify-content:space-between; align-items:center;">
-            <div class="legalitas-left">
-              <div class="name">${QUARTALS.find(q=>q.key===r.kuartal)?.label || r.kuartal} ${r.tahun} — Nilai ${overall===null?'-':overall+'%'} (${gradeFromPct(overall)})</div>
-              <div class="date">${r.catatan||''}</div>
-            </div>
-            <div style="display:flex; gap:6px; flex-shrink:0;">
-              <button class="icon-btn" onclick="openEditRaportModal('${m.id}','${sp.id}',${i})">✎</button>
-              <button class="icon-btn" onclick="hapusRaport('${m.id}','${sp.id}',${i})">✕</button>
-            </div>
+        return `<div class="raport-card">
+          <div class="raport-title" onclick="toggleRaportPin(this.closest('.raport-card'))">
+            <div class="name">${QUARTALS.find(q=>q.key===r.kuartal)?.label || r.kuartal} ${r.tahun} — Nilai ${overall===null?'-':overall+'%'} (${gradeFromPct(overall)})<span class="raport-caret">▸</span></div>
+            <div class="date">${r.catatan||''}</div>
           </div>
+          <div class="raport-actions">
+            <button class="icon-btn" title="Export Raport" onclick="event.stopPropagation(); exportRaport('${m.id}','${sp.id}',${i})">⬇</button>
+            <button class="icon-btn" onclick="event.stopPropagation(); openEditRaportModal('${m.id}','${sp.id}',${i})">✎</button>
+            <button class="icon-btn" onclick="event.stopPropagation(); hapusRaport('${m.id}','${sp.id}',${i})">✕</button>
+          </div>
+          <div class="raport-aspek">
           <table>
             <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
             <tbody>
@@ -1918,6 +1965,7 @@ function renderEvaluasi(m,sp,c){
             </tr>`).join('')}
             </tbody>
           </table>
+          </div>
         </div>`;
       }).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
     </div>
@@ -2073,6 +2121,60 @@ function hapusRaport(mid,spId,idx){
   sp.evaluasi.raport.splice(idx,1);
   persistMitra(m);
   renderAll();
+}
+/* Klik judul raport = pin (tetap terbuka walau kursor pindah). Klik lagi = lepas pin. */
+function toggleRaportPin(cardEl){
+  if(cardEl) cardEl.classList.toggle('pinned');
+}
+/* Export Raport Kinerja jadi file HTML mandiri yang bisa dibuka/dicetak/dibagikan. */
+function exportRaport(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const r = sp.evaluasi.raport[idx];
+  const aspects = raportAspekList(sp,r);
+  const overall = raportOverallPct(sp,r);
+  const grade = gradeFromPct(overall);
+  const qLabel = QUARTALS.find(q=>q.key===r.kuartal)?.label || r.kuartal;
+  const html = `<!DOCTYPE html><html lang="id"><head><meta charset="UTF-8"><title>Raport Kinerja — ${m.nama} — ${sp.nama}</title>
+<style>
+  body{font-family:Arial,Helvetica,sans-serif; padding:32px; color:#1a1a1a; max-width:800px; margin:0 auto;}
+  h1{font-size:20px; margin-bottom:4px;}
+  h2{font-size:15px; margin-top:28px; margin-bottom:6px;}
+  .meta{color:#555; font-size:13px; margin-top:2px;}
+  .score{font-size:26px; font-weight:700; margin-top:14px;}
+  table{width:100%; border-collapse:collapse; margin-top:8px;}
+  th,td{border:1px solid #ccc; padding:8px; text-align:left; font-size:13px; vertical-align:top;}
+  th{background:#f4f4f4;}
+  .footer{color:#888; font-size:11px; margin-top:32px; border-top:1px solid #eee; padding-top:12px;}
+</style></head><body>
+  <h1>Raport Kinerja Mitra</h1>
+  <div class="meta">Mitra: <strong>${m.nama}</strong></div>
+  <div class="meta">Sub Program: <strong>${sp.nama}</strong></div>
+  <div class="meta">Periode: <strong>${qLabel} ${r.tahun}</strong></div>
+  <div class="score">Nilai Akhir: ${overall===null?'-':overall+'%'} (${grade})</div>
+  ${r.catatan?`<div class="meta" style="margin-top:10px;">Catatan: ${r.catatan}</div>`:''}
+  <h2>Rincian Aspek Penilaian</h2>
+  <table>
+    <thead><tr><th>Aspek</th><th>Rincian</th><th>Nilai</th></tr></thead>
+    <tbody>
+    ${aspects.map(a=>`<tr>
+      <td>${a.no}. ${a.nama}</td>
+      <td>${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('<br>')}</td>
+      <td>${a.pct===null?'Belum tersedia':a.pct+'%'}</td>
+    </tr>`).join('')}
+    </tbody>
+  </table>
+  <div class="footer">Diekspor pada ${new Date().toLocaleString('id-ID')} dari Menara Kemitraan.</div>
+</body></html>`;
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `Raport-${slugify(m.nama)}-${slugify(sp.nama)}-${r.kuartal}-${r.tahun}.html`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 function openJadwalModal(mid,spId){
   openModal(`
