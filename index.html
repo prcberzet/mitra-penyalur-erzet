@@ -691,7 +691,7 @@ let mitraList = [
             keuangan:{link:''}, dokumentasi:{link:''}, tertulis:{link:''}, ppt:{link:''}},
         ],
         evaluasi:{
-          raport:[{periode:'Semester 1 2026', skor:'A-', catatan:'Kinerja stabil, realisasi dana konsisten.'}],
+          raport:[{kuartal:'Q2', tahun:2026, adaProject:false, asnafProject:'', asnafReguler:'sesuai', targetPM:150, catatan:'Kinerja stabil, realisasi dana konsisten.'}],
           jadwal:[{tanggal:'2026-08-05', agenda:'Evaluasi triwulan II', status:'terjadwal'}],
           catatan:[{tanggal:'2026-06-30', ringkasan:'Disepakati percepatan penyerapan dana bulan Juli.'}]
         }
@@ -859,6 +859,14 @@ function normalizeMitra(m){
       };
     });
     sp.evaluasi = sp.evaluasi || {raport:[],jadwal:[],catatan:[]};
+    sp.evaluasi.raport = (sp.evaluasi.raport||[]).map(r=>{
+      if(r.kuartal) return r; // sudah format kuartal baru
+      return {
+        kuartal:'Q1', tahun:new Date().getFullYear(), adaProject:false,
+        asnafProject:'', asnafReguler:'', targetPM:0,
+        catatan: r.catatan || (r.periode ? `${r.periode} — Nilai ${r.skor||'-'} (data lama, silakan terbitkan ulang agar aspek terhitung otomatis)` : ''),
+      };
+    });
   });
   return m;
 }
@@ -1774,21 +1782,144 @@ function hapusLaporan(mid,spId,idx){
 }
 
 /* --- EVALUASI --- */
+/* ---------------------------- RAPORT KINERJA -----------------------------
+   Raport diterbitkan per kuartal. Sebagian besar nilai aspek DIHITUNG OTOMATIS
+   dari data tab lain (Dana, Laporan, Aktivitas) berdasarkan kuartal & tahun
+   yang dipilih — tidak disimpan sebagai angka statis, supaya selalu
+   mencerminkan data terkini. Yang disimpan ke record raport hanya input yang
+   memang tidak punya sumber otomatis: kuartal/tahun, penanda "ada project",
+   kesesuaian asnaf (manual), target penerima manfaat (manual), dan catatan.
+   --------------------------------------------------------------------------- */
+const QUARTALS = [
+  {key:'Q1', label:'Kuartal 1 (Jan–Mar)', months:[0,1,2]},
+  {key:'Q2', label:'Kuartal 2 (Apr–Jun)', months:[3,4,5]},
+  {key:'Q3', label:'Kuartal 3 (Jul–Sep)', months:[6,7,8]},
+  {key:'Q4', label:'Kuartal 4 (Okt–Des)', months:[9,10,11]},
+];
+function currentQuarterKey(){ return QUARTALS[Math.floor(new Date().getMonth()/3)].key; }
+function quarterBulanList(kuartalKey, tahun){
+  const q = QUARTALS.find(x=>x.key===kuartalKey) || QUARTALS[0];
+  return q.months.map(mi=>`${BULAN_NAMES[mi]} ${tahun}`);
+}
+function danaInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return sp.dana.filter(d=>list.includes(d.bulan)); }
+function laporanInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return sp.laporanBulanan.filter(l=>list.includes(l.bulan)); }
+function harianInQuarter(sp,kuartal,tahun){
+  const q = QUARTALS.find(x=>x.key===kuartal) || QUARTALS[0];
+  return sp.aktivitasHarian.filter(a=>{
+    if(!a.tanggal) return false;
+    const [y,mo] = a.tanggal.split('-').map(Number);
+    return y===Number(tahun) && q.months.includes(mo-1);
+  });
+}
+function waktuPenerimaanPct(sp,kuartal,tahun){
+  const entries = laporanInQuarter(sp,kuartal,tahun);
+  if(!entries.length) return null;
+  const total = entries.reduce((a,l)=>{ const s=slaLaporan(l.targetTanggal,l.diterimaTanggal); return a+(s.pct===null?0:s.pct); },0);
+  return Math.round(total/entries.length);
+}
+function rilisBeritaPct(sp,kuartal,tahun){ return harianInQuarter(sp,kuartal,tahun).length ? 100 : 0; }
+function zreportPct(sp,kuartal,tahun){
+  const entries = laporanInQuarter(sp,kuartal,tahun);
+  if(!entries.length) return null;
+  const done = entries.filter(l=>isKomponenLengkap(l.keuangan)).length;
+  return Math.round(done/entries.length*100);
+}
+function dssPct(sp,kuartal,tahun){
+  const entries = danaInQuarter(sp,kuartal,tahun);
+  const totalCair = entries.reduce((a,d)=>a+(d.pencairanZakat||0)+(d.pencairanInfak||0),0);
+  const totalRealisasi = entries.reduce((a,d)=>a+(d.realisasiZakat||0)+(d.realisasiInfak||0),0);
+  return totalCair? Math.round(totalRealisasi/totalCair*100) : 0;
+}
+function capaianPM(sp,kuartal,tahun){
+  return laporanInQuarter(sp,kuartal,tahun).reduce((a,l)=>a+(l.penerima?.totalPP||0)+(l.penerima?.totalLM||0),0);
+}
+function asnafPct(v){ return v==='sesuai'?100:(v==='tidak'?0:null); }
+function raportAspekList(sp, r){
+  const waktu = waktuPenerimaanPct(sp,r.kuartal,r.tahun);
+  const rilis = rilisBeritaPct(sp,r.kuartal,r.tahun);
+  const zrep = zreportPct(sp,r.kuartal,r.tahun);
+  const dss = dssPct(sp,r.kuartal,r.tahun);
+  const capaian = capaianPM(sp,r.kuartal,r.tahun);
+  const targetPM = Number(r.targetPM)||0;
+  const pmPct = targetPM ? Math.round(capaian/targetPM*100) : null;
+  const aspects = [];
+  if(r.adaProject){
+    const sub = [waktu, asnafPct(r.asnafProject), rilis].filter(v=>v!==null);
+    aspects.push({no:1, nama:'Laporan Pelaksanaan Project', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
+      detail:[
+        {label:'Waktu Penerimaan Laporan', pct:waktu},
+        {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafProject), text: r.asnafProject==='sesuai'?'Sesuai':r.asnafProject==='tidak'?'Tidak Sesuai':'Belum diisi'},
+        {label:'Rilis Berita & Dokumentasi', pct:rilis},
+      ]});
+  }
+  {
+    const sub = [waktu, asnafPct(r.asnafReguler), zrep, rilis].filter(v=>v!==null);
+    aspects.push({no:2, nama:'Laporan Pelaksanaan Program Reguler', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
+      detail:[
+        {label:'Waktu Penerimaan Laporan', pct:waktu},
+        {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafReguler), text: r.asnafReguler==='sesuai'?'Sesuai':r.asnafReguler==='tidak'?'Tidak Sesuai':'Belum diisi'},
+        {label:'ZReport', pct:zrep},
+        {label:'Rilis Berita & Dokumentasi', pct:rilis},
+      ]});
+  }
+  aspects.push({no:3, nama:'Penyerapan DSS', pct:dss, detail:[{label:'Realisasi ÷ Dana Cair', pct:dss}]});
+  aspects.push({no:4, nama:'Pencapaian Target Penerima Manfaat', pct:pmPct, detail:[{label:`Capaian ${capaian} dari Target ${targetPM||'-'}`, pct:pmPct}]});
+  aspects.push({no:5, nama:'Dampak Program', pct:null, detail:[{label:'Akan dikembangkan kemudian', pct:null}]});
+  return aspects;
+}
+function raportOverallPct(sp,r){
+  const scored = raportAspekList(sp,r).filter(a=>a.no!==5).map(a=>a.pct).filter(v=>v!==null);
+  return scored.length? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
+}
+function gradeFromPct(pct){
+  if(pct===null) return '-';
+  if(pct>=90) return 'A';
+  if(pct>=80) return 'A-';
+  if(pct>=70) return 'B+';
+  if(pct>=60) return 'B';
+  if(pct>=50) return 'C+';
+  return 'C';
+}
+function pctBadge(pct){
+  if(pct===null) return `<span class="chip" style="background:var(--bg); color:var(--ink-faint);">Belum tersedia</span>`;
+  const cls = pct>=80?'chip-ok':pct>=50?'chip-warn':'chip-crit';
+  return `<span class="chip ${cls}">${pct}%</span>`;
+}
+
 function renderEvaluasi(m,sp,c){
   c.innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Raport Kinerja — ${sp.nama}</h3><p>Penilaian berkala terhadap kinerja sub program.</p></div>
+        <div><h3>Raport Kinerja — ${sp.nama}</h3><p>Penilaian berkala per kuartal terhadap kinerja sub program.</p></div>
         <button class="btn btn-primary btn-sm" onclick="openRaportModal('${m.id}','${sp.id}')">+ Terbitkan Raport</button>
       </div>
-      ${sp.evaluasi.raport.map((r,i)=>`
-        <div class="legalitas-item">
-          <div class="legalitas-left">
-            <div class="name">${r.periode} — Nilai ${r.skor}</div>
-            <div class="date">${r.catatan}</div>
+      ${sp.evaluasi.raport.map((r,i)=>{
+        const aspects = raportAspekList(sp,r);
+        const overall = raportOverallPct(sp,r);
+        return `<div class="legalitas-item" style="flex-direction:column; align-items:stretch; gap:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div class="legalitas-left">
+              <div class="name">${QUARTALS.find(q=>q.key===r.kuartal)?.label || r.kuartal} ${r.tahun} — Nilai ${overall===null?'-':overall+'%'} (${gradeFromPct(overall)})</div>
+              <div class="date">${r.catatan||''}</div>
+            </div>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button class="icon-btn" onclick="openEditRaportModal('${m.id}','${sp.id}',${i})">✎</button>
+              <button class="icon-btn" onclick="hapusRaport('${m.id}','${sp.id}',${i})">✕</button>
+            </div>
           </div>
-          <button class="icon-btn" onclick="hapusRaport('${m.id}','${sp.id}',${i})">✕</button>
-        </div>`).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
+          <table>
+            <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
+            <tbody>
+            ${aspects.map(a=>`<tr>
+              <td>${a.no}. ${a.nama}
+                <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
+              </td>
+              <td class="num-cell">${pctBadge(a.pct)}</td>
+            </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+      }).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
     </div>
     <div class="panel">
       <div class="panel-head">
@@ -1823,21 +1954,116 @@ function renderEvaluasi(m,sp,c){
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
     </div>`;
 }
+function raportFormFields(prefix, r){
+  r = r || {};
+  const kuartal = r.kuartal || currentQuarterKey();
+  const tahun = r.tahun || new Date().getFullYear();
+  const adaProject = !!r.adaProject;
+  const kuartalOpts = QUARTALS.map(q=>`<option value="${q.key}" ${q.key===kuartal?'selected':''}>${q.label}</option>`).join('');
+  const yearOpts = tahunRangeUmum().map(y=>`<option value="${y}" ${String(y)===String(tahun)?'selected':''}>${y}</option>`).join('');
+  return `
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:2;"><label>Kuartal</label><select id="f_${prefix}kuartal" onchange="refreshRaportPreview('${prefix}')">${kuartalOpts}</select></div>
+      <div class="field" style="flex:1;"><label>Tahun</label><select id="f_${prefix}tahun" onchange="refreshRaportPreview('${prefix}')">${yearOpts}</select></div>
+    </div>
+    <label style="display:flex; align-items:center; gap:8px; font-size:13px; margin:4px 0 12px; cursor:pointer;">
+      <input type="checkbox" id="f_${prefix}adaproject" ${adaProject?'checked':''} onchange="refreshRaportPreview('${prefix}')">
+      Ada Project pada kuartal ini?
+    </label>
+    <div id="raportPreview_${prefix}"></div>
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;" id="asnafProjectLabel_${prefix}">Kesesuaian Asnaf — Laporan Project</div>
+    <div class="field" id="asnafProjectField_${prefix}"><select id="f_${prefix}asnafproject">
+      <option value="" ${!r.asnafProject?'selected':''}>— Pilih —</option>
+      <option value="sesuai" ${r.asnafProject==='sesuai'?'selected':''}>Sesuai</option>
+      <option value="tidak" ${r.asnafProject==='tidak'?'selected':''}>Tidak Sesuai</option>
+    </select></div>
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Kesesuaian Asnaf — Program Reguler</div>
+    <div class="field"><select id="f_${prefix}asnafreguler">
+      <option value="" ${!r.asnafReguler?'selected':''}>— Pilih —</option>
+      <option value="sesuai" ${r.asnafReguler==='sesuai'?'selected':''}>Sesuai</option>
+      <option value="tidak" ${r.asnafReguler==='tidak'?'selected':''}>Tidak Sesuai</option>
+    </select></div>
+    <div class="field"><label>Target Penerima Manfaat (kuartal ini)</label><input id="f_${prefix}targetpm" type="number" placeholder="0" value="${r.targetPM??''}" oninput="refreshRaportPreview('${prefix}')"></div>
+    <div class="field"><label>Catatan (opsional)</label><textarea id="f_${prefix}catatan" placeholder="Ringkasan penilaian...">${r.catatan||''}</textarea></div>`;
+}
+function readRaportForm(prefix){
+  return {
+    kuartal: document.getElementById(`f_${prefix}kuartal`).value,
+    tahun: Number(document.getElementById(`f_${prefix}tahun`).value),
+    adaProject: document.getElementById(`f_${prefix}adaproject`).checked,
+    asnafProject: document.getElementById(`f_${prefix}asnafproject`).value,
+    asnafReguler: document.getElementById(`f_${prefix}asnafreguler`).value,
+    targetPM: Number(document.getElementById(`f_${prefix}targetpm`).value)||0,
+    catatan: document.getElementById(`f_${prefix}catatan`).value,
+  };
+}
+function refreshRaportPreview(prefix){
+  const kuartalEl = document.getElementById(`f_${prefix}kuartal`);
+  if(!kuartalEl) return; // modal sudah ditutup
+  const adaProject = document.getElementById(`f_${prefix}adaproject`).checked;
+  document.getElementById(`asnafProjectField_${prefix}`).style.display = adaProject?'block':'none';
+  document.getElementById(`asnafProjectLabel_${prefix}`).style.display = adaProject?'block':'none';
+  const r = {
+    kuartal: kuartalEl.value,
+    tahun: Number(document.getElementById(`f_${prefix}tahun`).value),
+    adaProject,
+    asnafProject: document.getElementById(`f_${prefix}asnafproject`).value,
+    asnafReguler: document.getElementById(`f_${prefix}asnafreguler`).value,
+    targetPM: Number(document.getElementById(`f_${prefix}targetpm`).value)||0,
+  };
+  const sp = raportPreviewCtx.sp;
+  const aspects = raportAspekList(sp, r);
+  const overall = raportOverallPct(sp, r);
+  document.getElementById(`raportPreview_${prefix}`).innerHTML = `
+    <div class="tag-note" style="margin-bottom:8px;">Nilai berikut dihitung otomatis dari data Dana, Laporan, dan Aktivitas pada kuartal terpilih — hanya Kesesuaian Asnaf, Target Penerima Manfaat, dan status "Ada Project" yang diisi manual.</div>
+    <table>
+      <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
+      <tbody>
+      ${aspects.map(a=>`<tr>
+        <td>${a.no}. ${a.nama}
+          <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
+        </td>
+        <td class="num-cell">${pctBadge(a.pct)}</td>
+      </tr>`).join('')}
+      <tr><td style="font-weight:600;">Perkiraan Nilai Akhir</td><td class="num-cell" style="font-weight:600;">${overall===null?'-':overall+'% ('+gradeFromPct(overall)+')'}</td></tr>
+      </tbody>
+    </table>`;
+}
+let raportPreviewCtx = {};
 function openRaportModal(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  raportPreviewCtx = { sp };
   openModal(`
     <h3>Terbitkan Raport Kinerja</h3>
-    <div class="field"><label>Periode</label><input id="f_rperiode" placeholder="Contoh: Semester 2 2026"></div>
-    <div class="field"><label>Skor / Nilai</label><input id="f_rskor" placeholder="Contoh: A, B+, 85"></div>
-    <div class="field"><label>Catatan</label><textarea id="f_rcatatan" placeholder="Ringkasan penilaian..."></textarea></div>
+    ${raportFormFields('r')}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanRaport('${mid}','${spId}')">Simpan</button></div>
   `);
+  refreshRaportPreview('r');
 }
 function simpanRaport(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const periode = document.getElementById('f_rperiode').value.trim();
-  if(!periode) return;
-  sp.evaluasi.raport.push({periode, skor:document.getElementById('f_rskor').value||'-', catatan:document.getElementById('f_rcatatan').value||''});
+  sp.evaluasi.raport.push(readRaportForm('r'));
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function openEditRaportModal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  raportPreviewCtx = { sp };
+  const r = sp.evaluasi.raport[idx];
+  openModal(`
+    <h3>Edit Raport Kinerja</h3>
+    ${raportFormFields('er', r)}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditRaport('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+  `);
+  refreshRaportPreview('er');
+}
+function simpanEditRaport(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.evaluasi.raport[idx] = readRaportForm('er');
   persistMitra(m);
   closeModal(); renderAll();
 }
