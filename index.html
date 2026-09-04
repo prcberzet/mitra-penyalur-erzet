@@ -1895,7 +1895,7 @@ function raportAspekList(sp, r){
   const aspects = [];
   if(r.adaProject){
     const sub = [waktu, asnafPct(r.asnafProject), rilis].filter(v=>v!==null);
-    aspects.push({no:1, nama:'Laporan Pelaksanaan Project', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
+    aspects.push({nama:'Laporan Pelaksanaan Project', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
       detail:[
         {label:'Waktu Penerimaan Laporan', pct:waktu},
         {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafProject), text: r.asnafProject==='sesuai'?'Sesuai':r.asnafProject==='tidak'?'Tidak Sesuai':'Belum diisi'},
@@ -1904,7 +1904,7 @@ function raportAspekList(sp, r){
   }
   {
     const sub = [waktu, asnafPct(r.asnafReguler), zrep, rilis].filter(v=>v!==null);
-    aspects.push({no:2, nama:'Laporan Pelaksanaan Program Reguler', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
+    aspects.push({nama:'Laporan Pelaksanaan Program Reguler', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
       detail:[
         {label:'Waktu Penerimaan Laporan', pct:waktu},
         {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafReguler), text: r.asnafReguler==='sesuai'?'Sesuai':r.asnafReguler==='tidak'?'Tidak Sesuai':'Belum diisi'},
@@ -1912,13 +1912,14 @@ function raportAspekList(sp, r){
         {label:'Rilis Berita & Dokumentasi', pct:rilis},
       ]});
   }
-  aspects.push({no:3, nama:'Penyerapan DSS', pct:dss, detail:[{label:'Realisasi ÷ Dana Cair', pct:dss}]});
-  aspects.push({no:4, nama:'Pencapaian Target Penerima Manfaat', pct:pmPct, detail:[{label:`Capaian ${capaian} dari Target ${targetPM||'-'}`, pct:pmPct}]});
-  aspects.push({no:5, nama:'Dampak Program', pct:null, detail:[{label:'Akan dikembangkan kemudian', pct:null}]});
+  aspects.push({nama:'Penyerapan DSS', pct:dss, detail:[{label:'Realisasi ÷ Dana Cair', pct:dss}]});
+  aspects.push({nama:'Pencapaian Target Penerima Manfaat', pct:pmPct, detail:[{label:`Capaian ${capaian} dari Target ${targetPM||'-'}`, pct:pmPct}]});
+  aspects.push({nama:'Dampak Program', pct:null, detail:[{label:'Akan dikembangkan kemudian', pct:null}]});
+  aspects.forEach((a,idx)=>{ a.no = idx+1; }); // nomor urut mengikuti aspek yang benar-benar tampil
   return aspects;
 }
 function raportOverallPct(sp,r){
-  const scored = raportAspekList(sp,r).filter(a=>a.no!==5).map(a=>a.pct).filter(v=>v!==null);
+  const scored = raportAspekList(sp,r).filter(a=>a.nama!=='Dampak Program').map(a=>a.pct).filter(v=>v!==null);
   return scored.length? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
 }
 function gradeFromPct(pct){
