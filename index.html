@@ -785,6 +785,11 @@ let selectedMitraId = null;      // null = halaman Ringkasan Semua Mitra (tampil
 let activeSubProgramId = null;
 let activeStage = 'dana';
 let db = null;                   // diisi setelah bootstrap Firebase selesai dicek
+let pejabatList = [               // daftar pejabat penandatangan raport, disinkron terpisah dari data mitra
+  {id:'peg1', jabatan:'Manager Program', nama:'Andi Wirawan', ttd:''},
+  {id:'peg2', jabatan:'Kepala Divisi Monitoring & Evaluasi', nama:'Sri Wulandari', ttd:''},
+  {id:'peg3', jabatan:'Direktur Program', nama:'Hendra Kusnadi', ttd:''},
+];
 
 const ALL_STAGES = [
   {key:'pra', label:'Pra'},
@@ -921,6 +926,12 @@ async function persistMitra(m){
   try{ await fb.setDoc(fb.doc(db,'mitra',id), data); }
   catch(e){ console.error('Gagal menyimpan ke Firebase:', e); }
 }
+async function persistPejabat(){
+  if(!db) return; // Mode demo lokal: perubahan cukup disimpan di memori browser
+  const fb = window.__fb;
+  try{ await fb.setDoc(fb.doc(db,'config','pejabat'), { list: pejabatList }); }
+  catch(e){ console.error('Gagal menyimpan daftar pejabat ke Firebase:', e); }
+}
 async function removeMitraRemote(id){
   if(!db) return;
   const fb = window.__fb;
@@ -933,6 +944,7 @@ function newMitraId(){
 }
 
 let unsubscribeMitra = null;
+let unsubscribePejabat = null;
 
 window.addEventListener('fb-ready', () => {
   const fb = window.__fb;
@@ -965,8 +977,16 @@ window.addEventListener('fb-ready', () => {
         connDot.classList.remove('live'); connDot.classList.add('demo');
         connLabel.textContent = 'Koneksi gagal (mode lokal)';
       });
+      if(unsubscribePejabat) unsubscribePejabat();
+      unsubscribePejabat = fb.onSnapshot(fb.doc(db,'config','pejabat'), docSnap => {
+        pejabatList = (docSnap.exists() && docSnap.data().list) ? docSnap.data().list : pejabatList;
+        renderAll();
+      }, err => {
+        console.error('Gagal memuat daftar pejabat:', err);
+      });
     } else {
       if(unsubscribeMitra){ unsubscribeMitra(); unsubscribeMitra = null; }
+      if(unsubscribePejabat){ unsubscribePejabat(); unsubscribePejabat = null; }
       connDot.classList.remove('live'); connDot.classList.add('demo');
       connLabel.textContent = 'Belum login';
       loginOverlay.style.display = 'flex';
@@ -1986,6 +2006,13 @@ function renderEvaluasi(m,sp,c){
             </tr>`).join('')}
             </tbody>
           </table>
+          ${r.rekomendasi?`<div style="font-size:12px; margin-top:10px;"><strong>Rekomendasi:</strong> ${r.rekomendasi}</div>`:''}
+          <div style="font-size:11px; color:var(--ink-soft); margin-top:8px;">
+            Tanggal Penerbitan: ${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}
+            · Disusun: ${pejabatList.find(p=>p.id===r.disusunOlehId)?.nama||'—'}
+            · Diperiksa: ${pejabatList.find(p=>p.id===r.diperiksaOlehId)?.nama||'—'}
+            · Disahkan: ${pejabatList.find(p=>p.id===r.disahkanOlehId)?.nama||'—'}
+          </div>
           </div>
         </div>`;
       }).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
@@ -2023,13 +2050,89 @@ function renderEvaluasi(m,sp,c){
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
     </div>`;
 }
-function raportFormFields(prefix, r){
+/* ------------------------- PENGATURAN PEJABAT ---------------------------
+   Daftar pejabat (Jabatan, Nama, Tanda Tangan Digital) dipakai untuk memilih
+   Disusun/Diperiksa/Disahkan Oleh saat menerbitkan Raport Kinerja. Disimpan
+   terpisah dari data mitra (lihat persistPejabat & unsubscribePejabat). */
+let pejabatDraft = [];
+let pejabatSettingsReturnTo = null; // supaya bisa kembali ke form Raport setelah atur pejabat
+function buildPejabatOptions(selectedId){
+  return `<option value="">— Pilih —</option>` +
+    pejabatList.map(p=>`<option value="${p.id}" ${p.id===selectedId?'selected':''}>${p.nama} — ${p.jabatan}</option>`).join('');
+}
+function openPejabatSettingsModal(){
+  pejabatDraft = JSON.parse(JSON.stringify(pejabatList));
+  renderPejabatSettingsModal();
+}
+function renderPejabatSettingsModal(){
+  openModalWide(`
+    <h3>Pengaturan Pejabat Penandatangan</h3>
+    <div class="tag-note">Daftar ini dipakai untuk memilih Disusun Oleh / Diperiksa Oleh / Disahkan Oleh saat menerbitkan Raport Kinerja.</div>
+    <div id="pejabatDraftList">
+      ${pejabatDraft.map((p,i)=>`
+        <div class="panel" style="padding:14px; margin-bottom:10px;">
+          <div style="display:flex; gap:10px;">
+            <div class="field" style="flex:1; margin-bottom:10px;"><label>Jabatan</label><input value="${escAttr(p.jabatan)}" oninput="pejabatDraft[${i}].jabatan=this.value"></div>
+            <div class="field" style="flex:1; margin-bottom:10px;"><label>Nama Pejabat</label><input value="${escAttr(p.nama)}" oninput="pejabatDraft[${i}].nama=this.value"></div>
+          </div>
+          <div style="display:flex; gap:14px; align-items:center;">
+            <div style="flex:1;">
+              <label style="font-size:12px; font-weight:600; color:var(--ink-soft); display:block; margin-bottom:5px;">Tanda Tangan Digital</label>
+              <input type="file" accept="image/*" onchange="handleTtdUpload(event, ${i})">
+            </div>
+            ${p.ttd?`<img src="${p.ttd}" style="height:40px; border:1px solid var(--line); border-radius:6px; background:#fff; padding:2px;">`:'<div style="font-size:11px; color:var(--ink-faint); white-space:nowrap;">Belum ada tanda tangan</div>'}
+            <button class="icon-btn" onclick="hapusPejabatDraft(${i})">✕</button>
+          </div>
+        </div>`).join('') || `<div class="empty-state">Belum ada pejabat. Klik "+ Tambah Pejabat" di bawah.</div>`}
+    </div>
+    <button class="btn btn-sm" onclick="tambahPejabatDraft()">+ Tambah Pejabat</button>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn" onclick="batalPejabatSettings()">Batal</button>
+      <button class="btn btn-primary" onclick="simpanPejabatSettings()">Simpan Pengaturan</button>
+    </div>
+  `);
+}
+function tambahPejabatDraft(){
+  pejabatDraft.push({id:'peg'+Date.now()+Math.floor(Math.random()*1000), jabatan:'', nama:'', ttd:''});
+  renderPejabatSettingsModal();
+}
+function hapusPejabatDraft(i){
+  pejabatDraft.splice(i,1);
+  renderPejabatSettingsModal();
+}
+function handleTtdUpload(evt, i){
+  const file = evt.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{ pejabatDraft[i].ttd = reader.result; renderPejabatSettingsModal(); };
+  reader.readAsDataURL(file);
+}
+function returnFromPejabatSettings(){
+  const ret = pejabatSettingsReturnTo;
+  pejabatSettingsReturnTo = null;
+  closeModal();
+  if(ret){
+    if(ret.mode==='add') openRaportModal(ret.mid, ret.spId);
+    else openEditRaportModal(ret.mid, ret.spId, ret.idx);
+  }
+}
+function batalPejabatSettings(){ returnFromPejabatSettings(); }
+function simpanPejabatSettings(){
+  pejabatList = pejabatDraft.filter(p=>p.jabatan.trim()||p.nama.trim());
+  persistPejabat();
+  returnFromPejabatSettings();
+}
+
+function raportFormFields(prefix, r, mid, spId, idx){
   r = r || {};
   const kuartal = r.kuartal || currentQuarterKey();
   const tahun = r.tahun || new Date().getFullYear();
   const adaProject = !!r.adaProject;
   const kuartalOpts = QUARTALS.map(q=>`<option value="${q.key}" ${q.key===kuartal?'selected':''}>${q.label}</option>`).join('');
   const yearOpts = tahunRangeUmum().map(y=>`<option value="${y}" ${String(y)===String(tahun)?'selected':''}>${y}</option>`).join('');
+  const returnCtxJson = idx===undefined
+    ? `{mode:'add', mid:'${mid}', spId:'${spId}'}`
+    : `{mode:'edit', mid:'${mid}', spId:'${spId}', idx:${idx}}`;
   return `
     <div style="display:flex; gap:10px;">
       <div class="field" style="flex:2;"><label>Kuartal</label><select id="f_${prefix}kuartal" onchange="refreshRaportPreview('${prefix}')">${kuartalOpts}</select></div>
@@ -2053,7 +2156,20 @@ function raportFormFields(prefix, r){
       <option value="tidak" ${r.asnafReguler==='tidak'?'selected':''}>Tidak Sesuai</option>
     </select></div>
     <div class="field"><label>Target Penerima Manfaat (kuartal ini)</label><input id="f_${prefix}targetpm" type="number" placeholder="0" value="${r.targetPM??''}" oninput="refreshRaportPreview('${prefix}')"></div>
-    <div class="field"><label>Catatan (opsional)</label><textarea id="f_${prefix}catatan" placeholder="Ringkasan penilaian...">${r.catatan||''}</textarea></div>`;
+    <div class="field"><label>Catatan (opsional)</label><textarea id="f_${prefix}catatan" placeholder="Ringkasan penilaian...">${r.catatan||''}</textarea></div>
+    <div class="field"><label>Rekomendasi (opsional)</label><textarea id="f_${prefix}rekomendasi" placeholder="Rekomendasi tindak lanjut...">${r.rekomendasi||''}</textarea></div>
+    <div class="field"><label>Tanggal Penerbitan</label><input id="f_${prefix}tglterbit" type="date" value="${escAttr(r.tanggalPenerbitan)||new Date().toISOString().slice(0,10)}"></div>
+
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Penandatangan</div>
+    <div class="field">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px;">
+        <label style="margin:0;">1. Disusun Oleh</label>
+        <button type="button" class="btn btn-sm" onclick="pejabatSettingsReturnTo=${returnCtxJson}; openPejabatSettingsModal();">⚙ Pengaturan</button>
+      </div>
+      <select id="f_${prefix}disusun">${buildPejabatOptions(r.disusunOlehId)}</select>
+    </div>
+    <div class="field"><label>2. Diperiksa Oleh</label><select id="f_${prefix}diperiksa">${buildPejabatOptions(r.diperiksaOlehId)}</select></div>
+    <div class="field"><label>3. Disahkan Oleh</label><select id="f_${prefix}disahkan">${buildPejabatOptions(r.disahkanOlehId)}</select></div>`;
 }
 function readRaportForm(prefix){
   return {
@@ -2064,6 +2180,11 @@ function readRaportForm(prefix){
     asnafReguler: document.getElementById(`f_${prefix}asnafreguler`).value,
     targetPM: Number(document.getElementById(`f_${prefix}targetpm`).value)||0,
     catatan: document.getElementById(`f_${prefix}catatan`).value,
+    rekomendasi: document.getElementById(`f_${prefix}rekomendasi`).value,
+    tanggalPenerbitan: document.getElementById(`f_${prefix}tglterbit`).value,
+    disusunOlehId: document.getElementById(`f_${prefix}disusun`).value,
+    diperiksaOlehId: document.getElementById(`f_${prefix}diperiksa`).value,
+    disahkanOlehId: document.getElementById(`f_${prefix}disahkan`).value,
   };
 }
 function refreshRaportPreview(prefix){
@@ -2105,7 +2226,7 @@ function openRaportModal(mid,spId){
   raportPreviewCtx = { sp };
   openModal(`
     <h3>Terbitkan Raport Kinerja</h3>
-    ${raportFormFields('r')}
+    ${raportFormFields('r', null, mid, spId)}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanRaport('${mid}','${spId}')">Simpan</button></div>
   `);
   refreshRaportPreview('r');
@@ -2124,7 +2245,7 @@ function openEditRaportModal(mid,spId,idx){
   const r = sp.evaluasi.raport[idx];
   openModal(`
     <h3>Edit Raport Kinerja</h3>
-    ${raportFormFields('er', r)}
+    ${raportFormFields('er', r, mid, spId, idx)}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditRaport('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
   `);
   refreshRaportPreview('er');
@@ -2190,6 +2311,7 @@ function exportRaport(mid,spId,idx){
   doc.text(`No. Formulir : ${noFormulir}`, contentR, 15, {align:'right'});
   doc.text(`Tahun : ${r.tahun}`, contentR, 20, {align:'right'});
   doc.text(`Periode : ${q.label}`, contentR, 25, {align:'right'});
+  doc.text(`Tanggal Terbit : ${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}`, contentR, 30, {align:'right'});
 
   doc.setDrawColor(30); doc.setLineWidth(0.4);
   doc.line(marginL, 36, contentR, 36);
@@ -2238,32 +2360,47 @@ function exportRaport(mid,spId,idx){
     doc.text(catatanLines, marginL, finalY);
     finalY += catatanLines.length*5;
   }
+  if(r.rekomendasi){
+    finalY += 6;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+    const rekomendasiLines = doc.splitTextToSize(`Rekomendasi: ${r.rekomendasi}`, contentR-marginL);
+    doc.text(rekomendasiLines, marginL, finalY);
+    finalY += rekomendasiLines.length*5;
+  }
 
+  /* --- PENANDATANGAN (3 kolom: Disusun / Diperiksa / Disahkan) --- */
   const pageH = doc.internal.pageSize.getHeight();
+  const sigBlockH = 45;
+  if(finalY + sigBlockH > pageH - 15){ doc.addPage(); finalY = 20; }
+  finalY += 12;
+  const cols = [
+    {label:'Disusun Oleh', p: pejabatList.find(p=>p.id===r.disusunOlehId)},
+    {label:'Diperiksa Oleh', p: pejabatList.find(p=>p.id===r.diperiksaOlehId)},
+    {label:'Disahkan Oleh', p: pejabatList.find(p=>p.id===r.disahkanOlehId)},
+  ];
+  const colW = (contentR-marginL)/3;
+  cols.forEach((c,ci)=>{
+    const cx = marginL + ci*colW;
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    doc.text(c.label, cx, finalY, {align:'left'});
+    if(c.p && c.p.ttd){
+      try{ doc.addImage(c.p.ttd, cx, finalY+3, 30, 16); }catch(e){ console.error('Gagal menyisipkan tanda tangan:', e); }
+    }
+    doc.setDrawColor(120); doc.setLineWidth(0.2);
+    doc.line(cx, finalY+22, cx+45, finalY+22);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9);
+    doc.text(c.p?c.p.nama:'—', cx, finalY+27);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8); doc.setTextColor(100);
+    doc.text(c.p?c.p.jabatan:'—', cx, finalY+31);
+    doc.setTextColor(20);
+  });
+
   doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(140);
   doc.text(`Dokumen ini dibuat otomatis oleh Menara Kemitraan pada ${new Date().toLocaleString('id-ID')}.`, marginL, pageH-10);
 
-  if(currentPreviewUrl){ URL.revokeObjectURL(currentPreviewUrl); currentPreviewUrl = null; }
   const blob = doc.output('blob');
-  currentPreviewUrl = URL.createObjectURL(blob);
-  const filename = `Raport-${slugify(m.nama)}-${slugify(sp.nama)}-${r.kuartal}-${r.tahun}.pdf`;
-  openModalWide(`
-    <h3>Pratinjau Raport Kinerja</h3>
-    <iframe src="${currentPreviewUrl}" style="width:100%; height:70vh; border:1px solid var(--line); border-radius:8px; display:block;"></iframe>
-    <div class="modal-actions" style="margin-top:14px;">
-      <button class="btn" onclick="closeModal()">Tutup</button>
-      <button class="btn btn-primary" onclick="downloadPreviewPdf('${filename}')">⬇ Unduh PDF</button>
-    </div>
-  `);
-}
-function downloadPreviewPdf(filename){
-  if(!currentPreviewUrl) return;
-  const a = document.createElement('a');
-  a.href = currentPreviewUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank');
 }
 function openJadwalModal(mid,spId){
   openModal(`
