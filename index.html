@@ -792,6 +792,9 @@ let pejabatList = [               // daftar pejabat penandatangan raport, disink
   {id:'peg2', jabatan:'Kepala Divisi Monitoring & Evaluasi', nama:'Sri Wulandari', ttd:''},
   {id:'peg3', jabatan:'Direktur Program', nama:'Hendra Kusnadi', ttd:''},
 ];
+let bobotAspek = {                // % pembobotan tiap aspek penilaian raport, disinkron terpisah dari data mitra
+  project: 20, reguler: 30, dss: 25, pm: 25, dampak: 0,
+};
 
 const ALL_STAGES = [
   {key:'pra', label:'Pra'},
@@ -935,6 +938,12 @@ async function persistPejabat(){
   try{ await fb.setDoc(fb.doc(db,'config','pejabat'), { list: pejabatList }); }
   catch(e){ console.error('Gagal menyimpan daftar pejabat ke Firebase:', e); }
 }
+async function persistBobot(){
+  if(!db) return; // Mode demo lokal: perubahan cukup disimpan di memori browser
+  const fb = window.__fb;
+  try{ await fb.setDoc(fb.doc(db,'config','bobot'), { weights: bobotAspek }); }
+  catch(e){ console.error('Gagal menyimpan bobot aspek ke Firebase:', e); }
+}
 async function removeMitraRemote(id){
   if(!db) return;
   const fb = window.__fb;
@@ -948,6 +957,7 @@ function newMitraId(){
 
 let unsubscribeMitra = null;
 let unsubscribePejabat = null;
+let unsubscribeBobot = null;
 
 window.addEventListener('fb-ready', () => {
   const fb = window.__fb;
@@ -987,9 +997,17 @@ window.addEventListener('fb-ready', () => {
       }, err => {
         console.error('Gagal memuat daftar pejabat:', err);
       });
+      if(unsubscribeBobot) unsubscribeBobot();
+      unsubscribeBobot = fb.onSnapshot(fb.doc(db,'config','bobot'), docSnap => {
+        bobotAspek = (docSnap.exists() && docSnap.data().weights) ? docSnap.data().weights : bobotAspek;
+        renderAll();
+      }, err => {
+        console.error('Gagal memuat bobot aspek:', err);
+      });
     } else {
       if(unsubscribeMitra){ unsubscribeMitra(); unsubscribeMitra = null; }
       if(unsubscribePejabat){ unsubscribePejabat(); unsubscribePejabat = null; }
+      if(unsubscribeBobot){ unsubscribeBobot(); unsubscribeBobot = null; }
       connDot.classList.remove('live'); connDot.classList.add('demo');
       connLabel.textContent = 'Belum login';
       loginOverlay.style.display = 'flex';
@@ -1935,7 +1953,7 @@ function raportAspekList(sp, r){
   const aspects = [];
   if(r.adaProject){
     const sub = [waktu, asnafPct(r.asnafProject), rilis].filter(v=>v!==null);
-    aspects.push({nama:'Laporan Pelaksanaan Project', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
+    aspects.push({key:'project', nama:'Laporan Pelaksanaan Project', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
       detail:[
         {label:'Waktu Penerimaan Laporan', pct:waktu},
         {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafProject), text: r.asnafProject==='sesuai'?'Sesuai':r.asnafProject==='tidak'?'Tidak Sesuai':'Belum diisi'},
@@ -1944,7 +1962,7 @@ function raportAspekList(sp, r){
   }
   {
     const sub = [waktu, asnafPct(r.asnafReguler), zrep, rilis].filter(v=>v!==null);
-    aspects.push({nama:'Laporan Pelaksanaan Program Reguler', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
+    aspects.push({key:'reguler', nama:'Laporan Pelaksanaan Program Reguler', pct: sub.length?Math.round(sub.reduce((a,b)=>a+b,0)/sub.length):null,
       detail:[
         {label:'Waktu Penerimaan Laporan', pct:waktu},
         {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafReguler), text: r.asnafReguler==='sesuai'?'Sesuai':r.asnafReguler==='tidak'?'Tidak Sesuai':'Belum diisi'},
@@ -1952,15 +1970,22 @@ function raportAspekList(sp, r){
         {label:'Rilis Berita & Dokumentasi', pct:rilis},
       ]});
   }
-  aspects.push({nama:'Penyerapan DSS', pct:dss, detail:[{label:'Realisasi ÷ Dana Cair', pct:dss}]});
-  aspects.push({nama:'Pencapaian Target Penerima Manfaat', pct:pmPct, detail:[{label:`Capaian ${capaian} dari Target ${targetPM||'-'}`, pct:pmPct}]});
-  aspects.push({nama:'Dampak Program', pct:null, detail:[{label:'Akan dikembangkan kemudian', pct:null}]});
+  aspects.push({key:'dss', nama:'Penyerapan DSS', pct:dss, detail:[{label:'Realisasi ÷ Dana Cair', pct:dss}]});
+  aspects.push({key:'pm', nama:'Pencapaian Target Penerima Manfaat', pct:pmPct, detail:[{label:`Capaian ${capaian} dari Target ${targetPM||'-'}`, pct:pmPct}]});
+  aspects.push({key:'dampak', nama:'Dampak Program', pct:null, detail:[{label:'Akan dikembangkan kemudian', pct:null}]});
   aspects.forEach((a,idx)=>{ a.no = idx+1; }); // nomor urut mengikuti aspek yang benar-benar tampil
   return aspects;
 }
 function raportOverallPct(sp,r){
-  const scored = raportAspekList(sp,r).filter(a=>a.nama!=='Dampak Program').map(a=>a.pct).filter(v=>v!==null);
-  return scored.length? Math.round(scored.reduce((a,b)=>a+b,0)/scored.length) : null;
+  const scored = raportAspekList(sp,r).filter(a=>a.pct!==null && a.key);
+  if(!scored.length) return null;
+  const totalWeight = scored.reduce((a,x)=>a+(Number(bobotAspek[x.key])||0),0);
+  if(!totalWeight){
+    // Bobot belum diatur/total 0: fallback rata-rata sederhana
+    return Math.round(scored.reduce((a,x)=>a+x.pct,0)/scored.length);
+  }
+  const weightedSum = scored.reduce((a,x)=>a+x.pct*(Number(bobotAspek[x.key])||0),0);
+  return Math.round(weightedSum/totalWeight);
 }
 function gradeFromPct(pct){
   if(pct===null) return '-';
@@ -2002,7 +2027,7 @@ function renderEvaluasi(m,sp,c){
             <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
             <tbody>
             ${aspects.map(a=>`<tr>
-              <td>${a.no}. ${a.nama}
+              <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot: ${bobotAspek[a.key]??0}%)</span>`:''}
                 <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
               </td>
               <td class="num-cell">${pctBadge(a.pct)}</td>
@@ -2011,7 +2036,7 @@ function renderEvaluasi(m,sp,c){
           </table>
           ${r.rekomendasi?`<div style="font-size:12px; margin-top:10px;"><strong>Rekomendasi:</strong> ${r.rekomendasi}</div>`:''}
           <div style="font-size:11px; color:var(--ink-soft); margin-top:8px;">
-            Tanggal Penerbitan: ${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}
+            ${r.kota?`${r.kota}, `:''}${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}
             · Disusun: ${pejabatList.find(p=>p.id===r.disusunOlehId)?.nama||'—'}
             · Diperiksa: ${pejabatList.find(p=>p.id===r.diperiksaOlehId)?.nama||'—'}
             · Disahkan: ${pejabatList.find(p=>p.id===r.disahkanOlehId)?.nama||'—'}
@@ -2126,6 +2151,63 @@ function simpanPejabatSettings(){
   returnFromPejabatSettings();
 }
 
+/* --------------------------- PENGATURAN BOBOT ---------------------------
+   % pembobotan tiap aspek penilaian raport. Kalau totalnya tidak 100% atau
+   sebuah aspek tidak berlaku (mis. Aspek Project saat "Ada Project" tidak
+   dicentang), raportOverallPct otomatis menormalkan ulang secara proporsional
+   berdasarkan bobot aspek yang benar-benar bernilai. */
+let bobotDraft = {};
+let bobotSettingsReturnTo = null; // supaya bisa kembali ke form Raport setelah atur bobot
+const BOBOT_LABELS = [
+  {key:'project', label:'1. Laporan Pelaksanaan Project'},
+  {key:'reguler', label:'2. Laporan Pelaksanaan Program Reguler'},
+  {key:'dss', label:'3. Penyerapan DSS'},
+  {key:'pm', label:'4. Pencapaian Target Penerima Manfaat'},
+  {key:'dampak', label:'5. Dampak Program'},
+];
+function openBobotSettingsModal(){
+  bobotDraft = {...bobotAspek};
+  renderBobotSettingsModal();
+}
+function bobotTotalText(total){
+  return total===100 ? `Total bobot: ${total}% ✓` : `Total bobot: ${total}% (sebaiknya tepat 100%)`;
+}
+function renderBobotSettingsModal(){
+  const total = Object.values(bobotDraft).reduce((a,b)=>a+(Number(b)||0),0);
+  openModalWide(`
+    <h3>Pengaturan % Pembobotan Aspek Penilaian</h3>
+    <div class="tag-note">Bobot menentukan kontribusi tiap aspek ke Nilai Akhir Raport Kinerja. Kalau Aspek Project tidak berlaku (checkbox "Ada Project" tidak dicentang saat menerbitkan raport), bobotnya otomatis didistribusikan ulang secara proporsional ke aspek lain — tidak perlu diatur manual per raport.</div>
+    ${BOBOT_LABELS.map(b=>`
+      <div class="field"><label>${b.label} (%)</label><input type="number" value="${bobotDraft[b.key]??0}" oninput="bobotDraft['${b.key}']=Number(this.value)||0; refreshBobotTotal();"></div>
+    `).join('')}
+    <div id="bobotTotalInfo" class="tag-note" style="font-weight:600;">${bobotTotalText(total)}</div>
+    <div class="modal-actions" style="margin-top:16px;">
+      <button class="btn" onclick="batalBobotSettings()">Batal</button>
+      <button class="btn btn-primary" onclick="simpanBobotSettings()">Simpan Pengaturan</button>
+    </div>
+  `);
+}
+function refreshBobotTotal(){
+  const total = Object.values(bobotDraft).reduce((a,b)=>a+(Number(b)||0),0);
+  const el = document.getElementById('bobotTotalInfo');
+  if(el) el.textContent = bobotTotalText(total);
+}
+function returnFromBobotSettings(){
+  const ret = bobotSettingsReturnTo;
+  bobotSettingsReturnTo = null;
+  closeModal();
+  if(ret){
+    if(ret.mode==='add') openRaportModal(ret.mid, ret.spId);
+    else openEditRaportModal(ret.mid, ret.spId, ret.idx);
+  }
+}
+function batalBobotSettings(){ returnFromBobotSettings(); }
+function simpanBobotSettings(){
+  bobotAspek = {...bobotDraft};
+  persistBobot();
+  returnFromBobotSettings();
+}
+
 function raportFormFields(prefix, r, mid, spId, idx){
   r = r || {};
   const kuartal = r.kuartal || currentQuarterKey();
@@ -2145,6 +2227,9 @@ function raportFormFields(prefix, r, mid, spId, idx){
       <input type="checkbox" id="f_${prefix}adaproject" ${adaProject?'checked':''} onchange="refreshRaportPreview('${prefix}')">
       Ada Project pada kuartal ini?
     </label>
+    <div style="display:flex; justify-content:flex-end; margin-bottom:6px;">
+      <button type="button" class="btn btn-sm" onclick="bobotSettingsReturnTo=${returnCtxJson}; openBobotSettingsModal();">⚙ Atur Bobot Aspek</button>
+    </div>
     <div id="raportPreview_${prefix}"></div>
     <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;" id="asnafProjectLabel_${prefix}">Kesesuaian Asnaf — Laporan Project</div>
     <div class="field" id="asnafProjectField_${prefix}"><select id="f_${prefix}asnafproject">
@@ -2161,7 +2246,10 @@ function raportFormFields(prefix, r, mid, spId, idx){
     <div class="field"><label>Target Penerima Manfaat (kuartal ini)</label><input id="f_${prefix}targetpm" type="number" placeholder="0" value="${r.targetPM??''}" oninput="refreshRaportPreview('${prefix}')"></div>
     <div class="field"><label>Catatan (opsional)</label><textarea id="f_${prefix}catatan" placeholder="Ringkasan penilaian...">${r.catatan||''}</textarea></div>
     <div class="field"><label>Rekomendasi (opsional)</label><textarea id="f_${prefix}rekomendasi" placeholder="Rekomendasi tindak lanjut...">${r.rekomendasi||''}</textarea></div>
-    <div class="field"><label>Tanggal Penerbitan</label><input id="f_${prefix}tglterbit" type="date" value="${escAttr(r.tanggalPenerbitan)||new Date().toISOString().slice(0,10)}"></div>
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label>Kota</label><input id="f_${prefix}kota" placeholder="Contoh: Bandung" value="${escAttr(r.kota)}"></div>
+      <div class="field" style="flex:1;"><label>Tanggal Penerbitan</label><input id="f_${prefix}tglterbit" type="date" value="${escAttr(r.tanggalPenerbitan)||new Date().toISOString().slice(0,10)}"></div>
+    </div>
 
     <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Penandatangan</div>
     <div class="field">
@@ -2184,6 +2272,7 @@ function readRaportForm(prefix){
     targetPM: Number(document.getElementById(`f_${prefix}targetpm`).value)||0,
     catatan: document.getElementById(`f_${prefix}catatan`).value,
     rekomendasi: document.getElementById(`f_${prefix}rekomendasi`).value,
+    kota: document.getElementById(`f_${prefix}kota`).value,
     tanggalPenerbitan: document.getElementById(`f_${prefix}tglterbit`).value,
     disusunOlehId: document.getElementById(`f_${prefix}disusun`).value,
     diperiksaOlehId: document.getElementById(`f_${prefix}diperiksa`).value,
@@ -2213,7 +2302,7 @@ function refreshRaportPreview(prefix){
       <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
       <tbody>
       ${aspects.map(a=>`<tr>
-        <td>${a.no}. ${a.nama}
+        <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot: ${bobotAspek[a.key]??0}%)</span>`:''}
           <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
         </td>
         <td class="num-cell">${pctBadge(a.pct)}</td>
@@ -2356,16 +2445,17 @@ function exportRaport(mid,spId,idx){
     String(a.no),
     a.nama,
     a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('\n'),
+    a.key?`${bobotAspek[a.key]??0}%`:'-',
     a.pct===null?'Belum tersedia':`${a.pct}%`,
   ]);
   doc.autoTable({
     startY: y,
     margin: { left: marginL, right: marginR },
-    head: [['No','Aspek Penilaian','Rincian Perhitungan','Nilai']],
+    head: [['No','Aspek Penilaian','Rincian Perhitungan','Bobot','Nilai']],
     body: rows,
     styles: { fontSize: 8.5, cellPadding: 2.5, valign:'top', lineColor:[200,200,200], lineWidth:0.15 },
     headStyles: { fillColor:[230,236,233], textColor:20, fontStyle:'bold' },
-    columnStyles: { 0:{cellWidth:8, halign:'center'}, 1:{cellWidth:48}, 3:{cellWidth:22, halign:'center'} },
+    columnStyles: { 0:{cellWidth:8, halign:'center'}, 1:{cellWidth:44}, 3:{cellWidth:16, halign:'center'}, 4:{cellWidth:18, halign:'center'} },
   });
 
   let finalY = doc.lastAutoTable.finalY + 10;
@@ -2395,7 +2485,8 @@ function exportRaport(mid,spId,idx){
 
   finalY += 12;
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20);
-  doc.text(`Tanggal Terbit : ${r.tanggalPenerbitan?fmtDate(r.tanggalPenerbitan):'—'}`, pageW/2, finalY, {align:'center'});
+  const tglTerbitStr = r.tanggalPenerbitan ? fmtDate(r.tanggalPenerbitan) : '—';
+  doc.text(`${r.kota||'—'}, ${tglTerbitStr}`, pageW/2, finalY, {align:'center'});
   finalY += 14;
 
   function drawSignatureBlock(label, p, anchorX, align){
