@@ -680,8 +680,15 @@ let mitraList = [
           {minggu:'Minggu ke-3 Juli 2026', tanggal:'2026-07-18', link:'https://drive.google.com/...', status:'ada'},
         ],
         laporanBulanan:[
-          {bulan:'Juni 2026', penerima:true, keuangan:true, dokumentasi:true, tertulis:true},
-          {bulan:'Juli 2026', penerima:false, keuangan:false, dokumentasi:false, tertulis:false},
+          {bulan:'Juni 2026', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-04',
+            penerima:{link:'https://drive.google.com/...', totalPP:120, totalLM:45},
+            keuangan:{link:'https://drive.google.com/...'},
+            dokumentasi:{link:'https://drive.google.com/...'},
+            tertulis:{link:'https://drive.google.com/...'},
+            ppt:{link:'https://drive.google.com/...'}},
+          {bulan:'Juli 2026', targetTanggal:'2026-08-05', diterimaTanggal:'',
+            penerima:{link:'', totalPP:0, totalLM:0},
+            keuangan:{link:''}, dokumentasi:{link:''}, tertulis:{link:''}, ppt:{link:''}},
         ],
         evaluasi:{
           raport:[{periode:'Semester 1 2026', skor:'A-', catatan:'Kinerja stabil, realisasi dana konsisten.'}],
@@ -730,7 +737,11 @@ let mitraList = [
           {minggu:'Minggu ke-2 Juli 2026', tanggal:'2026-07-11', link:'', status:'belum'},
         ],
         laporanBulanan:[
-          {bulan:'Juni 2026', penerima:true, keuangan:false, dokumentasi:true, tertulis:false},
+          {bulan:'Juni 2026', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-06',
+            penerima:{link:'https://drive.google.com/...', totalPP:80, totalLM:30},
+            keuangan:{link:''},
+            dokumentasi:{link:'https://drive.google.com/...'},
+            tertulis:{link:''}, ppt:{link:''}},
         ],
         evaluasi:{
           raport:[],
@@ -834,7 +845,19 @@ function normalizeMitra(m){
     sp.dana = sp.dana || [];
     sp.aktivitasHarian = sp.aktivitasHarian || [];
     sp.aktivitasMingguan = sp.aktivitasMingguan || [];
-    sp.laporanBulanan = sp.laporanBulanan || [];
+    sp.laporanBulanan = (sp.laporanBulanan || []).map(l=>{
+      const wrapLink = v => (v && typeof v==='object') ? {link:v.link||''} : {link:''};
+      return {
+        bulan: l.bulan||'',
+        targetTanggal: l.targetTanggal||'',
+        diterimaTanggal: l.diterimaTanggal||'',
+        penerima: (l.penerima && typeof l.penerima==='object') ? {link:l.penerima.link||'', totalPP:l.penerima.totalPP||0, totalLM:l.penerima.totalLM||0} : {link:'', totalPP:0, totalLM:0},
+        keuangan: wrapLink(l.keuangan),
+        dokumentasi: wrapLink(l.dokumentasi),
+        tertulis: wrapLink(l.tertulis),
+        ppt: wrapLink(l.ppt),
+      };
+    });
     sp.evaluasi = sp.evaluasi || {raport:[],jadwal:[],catatan:[]};
   });
   return m;
@@ -938,10 +961,10 @@ function statusAktivitas(sp){
 function statusLaporan(sp){
   if(!sp.laporanBulanan.length) return 'crit';
   const last = sp.laporanBulanan[sp.laporanBulanan.length-1];
-  const items = [last.penerima,last.keuangan,last.dokumentasi,last.tertulis];
-  const done = items.filter(Boolean).length;
-  if(done===4) return 'ok';
-  if(done>=2) return 'warn';
+  const items = [last.penerima, last.keuangan, last.dokumentasi, last.tertulis, last.ppt];
+  const done = items.filter(x=>x && x.link && String(x.link).trim()).length;
+  if(done===5) return 'ok';
+  if(done>=3) return 'warn';
   return 'crit';
 }
 function statusEvaluasi(sp){
@@ -1596,53 +1619,149 @@ function hapusMingguan(mid,spId,idx){
 }
 
 /* --- LAPORAN --- */
+/* SLA Laporan Bulanan: dihitung dari selisih Tanggal Target vs Tanggal Diterima Lembaga.
+   Tepat waktu (diterima <= target) = 100%. Terlambat 1 hari = 50%. Lebih dari 1 hari = 0%. */
+function toUTCDays(str){
+  const [y,mo,d] = str.split('-').map(Number);
+  return Date.UTC(y,mo-1,d)/86400000;
+}
+function slaLaporan(target, diterima){
+  if(!target || !diterima) return { pct:null, label:'Belum Diterima' };
+  const diff = Math.round(toUTCDays(diterima) - toUTCDays(target));
+  if(diff<=0) return { pct:100, label:'Tepat Waktu' };
+  if(diff===1) return { pct:50, label:'Terlambat 1 Hari' };
+  return { pct:0, label:'Terlambat >1 Hari' };
+}
+function slaLaporanBadge(target, diterima){
+  const { pct, label } = slaLaporan(target, diterima);
+  if(pct===null) return `<span class="chip" style="background:var(--bg); color:var(--ink-faint);">${label}</span>`;
+  const cls = pct===100?'chip-ok':pct===50?'chip-warn':'chip-crit';
+  return `<span class="chip ${cls}">${pct}% · ${label}</span>`;
+}
+function isKomponenLengkap(obj){ return !!(obj && obj.link && String(obj.link).trim()); }
+function komponenCell(obj, extraHtml){
+  const ok = isKomponenLengkap(obj);
+  return `<td>
+    <span class="chip ${ok?'chip-ok':'chip-crit'}">${ok?'Lengkap':'Belum'}</span>
+    ${extraHtml||''}
+    ${ok?`<div class="link-cell" style="margin-top:4px;"><a href="${obj.link}" target="_blank">Lihat ↗</a></div>`:''}
+  </td>`;
+}
 function renderLaporan(m,sp,c){
   c.innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Kelengkapan Laporan Bulanan — ${sp.nama}</h3><p>Data Penerima Manfaat, Keuangan, Dokumentasi, dan Laporan Tertulis.</p></div>
+        <div><h3>Kelengkapan Laporan Bulanan — ${sp.nama}</h3><p>SLA penerimaan, Data Penerima Manfaat, Keuangan, Dokumentasi, Laporan Tertulis, dan PPT Presentasi.</p></div>
         <button class="btn btn-primary btn-sm" onclick="openLaporanModal('${m.id}','${sp.id}')">+ Tambah Bulan</button>
       </div>
       <table>
-        <thead><tr><th>Bulan</th><th>Data Penerima Manfaat</th><th>Keuangan</th><th>Dokumentasi</th><th>Laporan Tertulis</th><th></th></tr></thead>
+        <thead><tr><th>Bulan</th><th>SLA Penerimaan</th><th>Data Penerima Manfaat</th><th>Keuangan</th><th>Dokumentasi</th><th>Laporan Tertulis</th><th>PPT Presentasi</th><th></th></tr></thead>
         <tbody>
-        ${sp.laporanBulanan.map((l,i)=>`
-          <tr>
+        ${sp.laporanBulanan.map((l,i)=>{
+          const danaEntry = sp.dana.find(d=>d.bulan===l.bulan);
+          const totalRealisasi = danaEntry ? (danaEntry.realisasiZakat||0)+(danaEntry.realisasiInfak||0) : 0;
+          const pmMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div>`;
+          const keuMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div>`;
+          return `<tr>
             <td>${l.bulan}</td>
-            <td>${chipBool(l.penerima)}</td>
-            <td>${chipBool(l.keuangan)}</td>
-            <td>${chipBool(l.dokumentasi)}</td>
-            <td>${chipBool(l.tertulis)}</td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusLaporan('${m.id}','${sp.id}',${i})">✕</button></td>
-          </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">Belum ada laporan bulanan tercatat.</div></td></tr>`}
+            <td>${slaLaporanBadge(l.targetTanggal, l.diterimaTanggal)}</td>
+            ${komponenCell(l.penerima, pmMeta)}
+            ${komponenCell(l.keuangan, keuMeta)}
+            ${komponenCell(l.dokumentasi)}
+            ${komponenCell(l.tertulis)}
+            ${komponenCell(l.ppt)}
+            <td class="row-actions">
+              <button class="icon-btn" onclick="openEditLaporanModal('${m.id}','${sp.id}',${i})">✎</button>
+              <button class="icon-btn" onclick="hapusLaporan('${m.id}','${sp.id}',${i})">✕</button>
+            </td>
+          </tr>`;
+        }).join('') || `<tr><td colspan="8"><div class="empty-state">Belum ada laporan bulanan tercatat.</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
-function chipBool(v){ return v? `<span class="chip chip-ok">Lengkap</span>` : `<span class="chip chip-crit">Belum</span>`; }
+function laporanFormFields(prefix, l){
+  l = l || {};
+  const pm = l.penerima || {};
+  const keu = l.keuangan || {};
+  const dok = l.dokumentasi || {};
+  const tert = l.tertulis || {};
+  const ppt = l.ppt || {};
+  return `
+    ${bulanTahunFieldHtml(prefix, l.bulan)}
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label>Tanggal Target Penerimaan Laporan</label><input id="f_${prefix}target" type="date" value="${escAttr(l.targetTanggal)}"></div>
+      <div class="field" style="flex:1;"><label>Tanggal Diterima Lembaga</label><input id="f_${prefix}diterima" type="date" value="${escAttr(l.diterimaTanggal)}"></div>
+    </div>
+    <div class="tag-note">Kesesuaian SLA (Tepat Waktu / Terlambat) dihitung otomatis dari selisih kedua tanggal di atas.</div>
+
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Data Penerima Manfaat</div>
+    <div class="field"><label>Tautan Laporan</label><input id="f_${prefix}pmlink" placeholder="https://drive.google.com/..." value="${escAttr(pm.link)}"></div>
+    <div style="display:flex; gap:10px;">
+      <div class="field" style="flex:1;"><label>Total PP</label><input id="f_${prefix}pmpp" type="number" placeholder="0" value="${pm.totalPP??''}"></div>
+      <div class="field" style="flex:1;"><label>Total LM</label><input id="f_${prefix}pmlm" type="number" placeholder="0" value="${pm.totalLM??''}"></div>
+    </div>
+
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Keuangan</div>
+    <div class="field"><label>Tautan Laporan Keuangan</label><input id="f_${prefix}keulink" placeholder="https://drive.google.com/..." value="${escAttr(keu.link)}"></div>
+    <div class="tag-note">Total realisasi (Zakat + Infak) diambil otomatis dari tab Dana pada bulan yang sama — tidak perlu diisi manual.</div>
+
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Dokumentasi</div>
+    <div class="field"><label>Tautan Dokumentasi</label><input id="f_${prefix}doklink" placeholder="https://drive.google.com/..." value="${escAttr(dok.link)}"></div>
+
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Laporan Tertulis</div>
+    <div class="field"><label>Tautan Laporan Tertulis</label><input id="f_${prefix}tertlink" placeholder="https://drive.google.com/..." value="${escAttr(tert.link)}"></div>
+
+    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">PPT Presentasi</div>
+    <div class="field"><label>Tautan PPT Presentasi</label><input id="f_${prefix}pptlink" placeholder="https://drive.google.com/..." value="${escAttr(ppt.link)}"></div>
+  `;
+}
+function readLaporanForm(prefix){
+  const bulanNama = document.getElementById(`f_${prefix}bulanNama`).value;
+  const bulanTahun = document.getElementById(`f_${prefix}bulanTahun`).value;
+  return {
+    bulan: `${bulanNama} ${bulanTahun}`,
+    targetTanggal: document.getElementById(`f_${prefix}target`).value,
+    diterimaTanggal: document.getElementById(`f_${prefix}diterima`).value,
+    penerima: {
+      link: document.getElementById(`f_${prefix}pmlink`).value,
+      totalPP: Number(document.getElementById(`f_${prefix}pmpp`).value)||0,
+      totalLM: Number(document.getElementById(`f_${prefix}pmlm`).value)||0,
+    },
+    keuangan: { link: document.getElementById(`f_${prefix}keulink`).value },
+    dokumentasi: { link: document.getElementById(`f_${prefix}doklink`).value },
+    tertulis: { link: document.getElementById(`f_${prefix}tertlink`).value },
+    ppt: { link: document.getElementById(`f_${prefix}pptlink`).value },
+  };
+}
 function openLaporanModal(mid,spId){
   openModal(`
     <h3>Tambah Laporan Bulanan</h3>
-    <div class="field"><label>Bulan</label><input id="f_labulan" placeholder="Contoh: Agustus 2026"></div>
-    <div class="field"><label>Data Penerima Manfaat</label><select id="f_lapm"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="field"><label>Keuangan</label><select id="f_lakeu"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="field"><label>Dokumentasi</label><select id="f_ladok"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
-    <div class="field"><label>Laporan Tertulis</label><select id="f_latert"><option value="1">Lengkap</option><option value="0">Belum</option></select></div>
+    ${laporanFormFields('la')}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanLaporan('${mid}','${spId}')">Simpan</button></div>
   `);
 }
 function simpanLaporan(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const bulan = document.getElementById('f_labulan').value.trim();
-  if(!bulan) return;
-  sp.laporanBulanan.push({
-    bulan,
-    penerima: document.getElementById('f_lapm').value==='1',
-    keuangan: document.getElementById('f_lakeu').value==='1',
-    dokumentasi: document.getElementById('f_ladok').value==='1',
-    tertulis: document.getElementById('f_latert').value==='1',
-  });
+  sp.laporanBulanan.push(readLaporanForm('la'));
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function openEditLaporanModal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const l = sp.laporanBulanan[idx];
+  openModal(`
+    <h3>Edit Laporan Bulanan</h3>
+    ${laporanFormFields('ela', l)}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditLaporan('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+  `);
+}
+function simpanEditLaporan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.laporanBulanan[idx] = readLaporanForm('ela');
   persistMitra(m);
   closeModal(); renderAll();
 }
