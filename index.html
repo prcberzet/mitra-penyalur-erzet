@@ -700,13 +700,13 @@ let mitraList = [
           {minggu:'Minggu ke-3 Juli 2026', tanggal:'2026-07-18', link:'https://drive.google.com/...', status:'ada'},
         ],
         laporanBulanan:[
-          {bulan:'Juni 2026', zreportTanggalKirim:'2026-06-29', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-04',
+          {bulan:'Juni 2026', zreportTanggalKirim:'2026-06-29', zreportLink:'https://drive.google.com/...', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-04',
             penerima:{link:'https://drive.google.com/...', totalPP:120, totalLM:45},
             keuangan:{link:'https://drive.google.com/...'},
             dokumentasi:{link:'https://drive.google.com/...'},
             tertulis:{link:'https://drive.google.com/...'},
             ppt:{link:'https://drive.google.com/...'}},
-          {bulan:'Juli 2026', zreportTanggalKirim:'', targetTanggal:'2026-08-05', diterimaTanggal:'',
+          {bulan:'Juli 2026', zreportTanggalKirim:'', zreportLink:'', targetTanggal:'2026-08-05', diterimaTanggal:'',
             penerima:{link:'', totalPP:0, totalLM:0},
             keuangan:{link:''}, dokumentasi:{link:''}, tertulis:{link:''}, ppt:{link:''}},
         ],
@@ -757,7 +757,7 @@ let mitraList = [
           {minggu:'Minggu ke-2 Juli 2026', tanggal:'2026-07-11', link:'', status:'belum'},
         ],
         laporanBulanan:[
-          {bulan:'Juni 2026', zreportTanggalKirim:'2026-07-01', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-06',
+          {bulan:'Juni 2026', zreportTanggalKirim:'2026-07-01', zreportLink:'https://drive.google.com/...', targetTanggal:'2026-07-05', diterimaTanggal:'2026-07-06',
             penerima:{link:'https://drive.google.com/...', totalPP:80, totalLM:30},
             keuangan:{link:''},
             dokumentasi:{link:'https://drive.google.com/...'},
@@ -870,6 +870,7 @@ function normalizeMitra(m){
       return {
         bulan: l.bulan||'',
         zreportTanggalKirim: l.zreportTanggalKirim||'',
+        zreportLink: l.zreportLink||'',
         targetTanggal: l.targetTanggal||'',
         diterimaTanggal: l.diterimaTanggal||'',
         penerima: (l.penerima && typeof l.penerima==='object') ? {link:l.penerima.link||'', totalPP:l.penerima.totalPP||0, totalLM:l.penerima.totalLM||0} : {link:'', totalPP:0, totalLM:0},
@@ -1712,8 +1713,8 @@ function renderLaporan(m,sp,c){
         ${sp.laporanBulanan.map((l,i)=>{
           const danaEntry = sp.dana.find(d=>d.bulan===l.bulan);
           const totalRealisasi = danaEntry ? (danaEntry.realisasiZakat||0)+(danaEntry.realisasiInfak||0) : 0;
-          const pmMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div>`;
-          const keuMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div><div style="margin-top:4px;">${slaZReportBadge(l)}</div>`;
+          const pmMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div><div style="margin-top:4px;">${slaZReportBadge(l)}</div>${l.zreportLink?`<div class="link-cell" style="margin-top:4px;"><a href="${l.zreportLink}" target="_blank">Lihat ZReport ↗</a></div>`:''}`;
+          const keuMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div>`;
           return `<tr>
             <td>${l.bulan}</td>
             <td>${slaLaporanBadge(l.targetTanggal, l.diterimaTanggal)}</td>
@@ -1742,6 +1743,7 @@ function laporanFormFields(prefix, l){
   return `
     ${bulanTahunFieldHtml(prefix, l.bulan)}
     <div class="field"><label>Tanggal Kirim Laporan ZReport</label><input id="f_${prefix}zreport" type="date" value="${escAttr(l.zreportTanggalKirim)}"></div>
+    <div class="field"><label>Link Laporan ZReport</label><input id="f_${prefix}zreportlink" placeholder="https://drive.google.com/..." value="${escAttr(l.zreportLink)}"></div>
     <div class="tag-note">Target ZReport otomatis = tanggal akhir bulan laporan. Tepat waktu = 100%, terlambat 1 hari = 50%, terlambat &gt;1 hari = 0%.</div>
     <div style="display:flex; gap:10px;">
       <div class="field" style="flex:1;"><label>Tanggal Target Penerimaan Laporan</label><input id="f_${prefix}target" type="date" value="${escAttr(l.targetTanggal)}"></div>
@@ -1776,6 +1778,7 @@ function readLaporanForm(prefix){
   return {
     bulan: `${bulanNama} ${bulanTahun}`,
     zreportTanggalKirim: document.getElementById(`f_${prefix}zreport`).value,
+    zreportLink: document.getElementById(`f_${prefix}zreportlink`).value,
     targetTanggal: document.getElementById(`f_${prefix}target`).value,
     diterimaTanggal: document.getElementById(`f_${prefix}diterima`).value,
     penerima: {
