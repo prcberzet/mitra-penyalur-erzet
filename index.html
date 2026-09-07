@@ -796,6 +796,10 @@ let bobotAspek = {                // % pembobotan tiap aspek penilaian raport, d
   waktuProject: 10, kontenProject: 10, waktuReguler: 15, kontenReguler: 15,
   dss: 25, pm: 25, dampak: 0,
 };
+let targetAspek = {                // % target capaian tiap aspek — Nilai = (Capaian ÷ Target) × Bobot
+  waktuProject: 100, kontenProject: 100, waktuReguler: 100, kontenReguler: 100,
+  dss: 100, pm: 100, dampak: 100,
+};
 
 const ALL_STAGES = [
   {key:'pra', label:'Pra'},
@@ -942,7 +946,7 @@ async function persistPejabat(){
 async function persistBobot(){
   if(!db) return; // Mode demo lokal: perubahan cukup disimpan di memori browser
   const fb = window.__fb;
-  try{ await fb.setDoc(fb.doc(db,'config','bobot'), { weights: bobotAspek }); }
+  try{ await fb.setDoc(fb.doc(db,'config','bobot'), { weights: bobotAspek, targets: targetAspek }); }
   catch(e){ console.error('Gagal menyimpan bobot aspek ke Firebase:', e); }
 }
 async function removeMitraRemote(id){
@@ -1001,6 +1005,7 @@ window.addEventListener('fb-ready', () => {
       if(unsubscribeBobot) unsubscribeBobot();
       unsubscribeBobot = fb.onSnapshot(fb.doc(db,'config','bobot'), docSnap => {
         bobotAspek = (docSnap.exists() && docSnap.data().weights) ? docSnap.data().weights : bobotAspek;
+        targetAspek = (docSnap.exists() && docSnap.data().targets) ? docSnap.data().targets : targetAspek;
         renderAll();
       }, err => {
         console.error('Gagal memuat bobot aspek:', err);
@@ -1982,16 +1987,34 @@ function raportAspekList(sp, r){
   aspects.forEach((a,idx)=>{ a.no = idx+1; }); // nomor urut mengikuti aspek yang benar-benar tampil
   return aspects;
 }
+/* Kontribusi nilai 1 aspek ke Nilai Akhir: (Capaian ÷ Target) × Bobot. */
+function aspekKontribusi(a){
+  if(a.pct===null || !a.key) return null;
+  const bobot = Number(bobotAspek[a.key])||0;
+  const target = Number(targetAspek[a.key])||0;
+  if(!target) return 0;
+  return (a.pct/target)*bobot;
+}
 function raportOverallPct(sp,r){
   const scored = raportAspekList(sp,r).filter(a=>a.pct!==null && a.key);
   if(!scored.length) return null;
-  const totalWeight = scored.reduce((a,x)=>a+(Number(bobotAspek[x.key])||0),0);
-  if(!totalWeight){
-    // Bobot belum diatur/total 0: fallback rata-rata sederhana
-    return Math.round(scored.reduce((a,x)=>a+x.pct,0)/scored.length);
-  }
-  const weightedSum = scored.reduce((a,x)=>a+x.pct*(Number(bobotAspek[x.key])||0),0);
-  return Math.round(weightedSum/totalWeight);
+  const total = scored.reduce((sum,a)=>sum + (aspekKontribusi(a)||0), 0);
+  return Math.round(total);
+}
+const ASPEK_TABLE_HEAD = `<tr><th>Aspek Penilaian</th><th class="num-cell">Capaian</th><th class="num-cell">Nilai</th></tr>`;
+function renderAspekRowsHtml(aspects){
+  return aspects.map(a=>{
+    const kontribusi = aspekKontribusi(a);
+    const bobot = a.key? (bobotAspek[a.key]??0) : null;
+    const target = a.key? (targetAspek[a.key]??100) : null;
+    return `<tr>
+      <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot: ${bobot}% · Target: ${target}%)</span>`:''}
+        <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
+      </td>
+      <td class="num-cell">${pctBadge(a.pct)}</td>
+      <td class="num-cell">${kontribusi===null?'—':Math.round(kontribusi*10)/10+'%'}</td>
+    </tr>`;
+  }).join('');
 }
 function gradeFromPct(pct){
   if(pct===null) return '-';
@@ -2030,14 +2053,9 @@ function renderEvaluasi(m,sp,c){
           </div>
           <div class="raport-aspek">
           <table>
-            <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
+            <thead>${ASPEK_TABLE_HEAD}</thead>
             <tbody>
-            ${aspects.map(a=>`<tr>
-              <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot: ${bobotAspek[a.key]??0}%)</span>`:''}
-                <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
-              </td>
-              <td class="num-cell">${pctBadge(a.pct)}</td>
-            </tr>`).join('')}
+            ${renderAspekRowsHtml(aspects)}
             </tbody>
           </table>
           ${r.rekomendasi?`<div style="font-size:12px; margin-top:10px;"><strong>Rekomendasi:</strong> ${r.rekomendasi}</div>`:''}
@@ -2163,6 +2181,7 @@ function simpanPejabatSettings(){
    dicentang), raportOverallPct otomatis menormalkan ulang secara proporsional
    berdasarkan bobot aspek yang benar-benar bernilai. */
 let bobotDraft = {};
+let targetDraft = {};
 let bobotSettingsReturnTo = null; // supaya bisa kembali ke form Raport setelah atur bobot
 const BOBOT_LABELS = [
   {key:'waktuProject', label:'1. Waktu Penerimaan Laporan Project'},
@@ -2175,6 +2194,7 @@ const BOBOT_LABELS = [
 ];
 function openBobotSettingsModal(){
   bobotDraft = {...bobotAspek};
+  targetDraft = {...targetAspek};
   renderBobotSettingsModal();
 }
 function bobotTotalText(total){
@@ -2183,10 +2203,13 @@ function bobotTotalText(total){
 function renderBobotSettingsModal(){
   const total = BOBOT_LABELS.reduce((a,b)=>a+(Number(bobotDraft[b.key])||0),0);
   openModalWide(`
-    <h3>Pengaturan % Pembobotan Aspek Penilaian</h3>
-    <div class="tag-note">Bobot menentukan kontribusi tiap aspek ke Nilai Akhir Raport Kinerja. Kalau Aspek 1 & 2 (Project) tidak berlaku (checkbox "Ada Project" tidak dicentang saat menerbitkan raport), bobot keduanya otomatis didistribusikan ulang secara proporsional ke aspek lain, dan penomoran aspek mulai dari 1 lagi (Waktu Penerimaan Laporan Program Reguler jadi nomor 1) — tidak perlu diatur manual per raport.</div>
+    <h3>Pengaturan % Pembobotan & Target Aspek Penilaian</h3>
+    <div class="tag-note">Nilai tiap aspek dihitung: Capaian ÷ Target × Bobot. Kalau Aspek 1 & 2 (Project) tidak berlaku (checkbox "Ada Project" tidak dicentang saat menerbitkan raport), bobot keduanya otomatis didistribusikan ulang secara proporsional ke aspek lain, dan penomoran aspek mulai dari 1 lagi (Waktu Penerimaan Laporan Program Reguler jadi nomor 1) — tidak perlu diatur manual per raport.</div>
     ${BOBOT_LABELS.map(b=>`
-      <div class="field"><label>${b.label} (%)</label><input type="number" value="${bobotDraft[b.key]??0}" oninput="bobotDraft['${b.key}']=Number(this.value)||0; refreshBobotTotal();"></div>
+      <div style="display:flex; gap:10px;">
+        <div class="field" style="flex:2;"><label>${b.label} — Bobot (%)</label><input type="number" value="${bobotDraft[b.key]??0}" oninput="bobotDraft['${b.key}']=Number(this.value)||0; refreshBobotTotal();"></div>
+        <div class="field" style="flex:1;"><label>Target (%)</label><input type="number" value="${targetDraft[b.key]??100}" oninput="targetDraft['${b.key}']=Number(this.value)||0;"></div>
+      </div>
     `).join('')}
     <div id="bobotTotalInfo" class="tag-note" style="font-weight:600;">${bobotTotalText(total)}</div>
     <div class="modal-actions" style="margin-top:16px;">
@@ -2212,6 +2235,7 @@ function returnFromBobotSettings(){
 function batalBobotSettings(){ returnFromBobotSettings(); }
 function simpanBobotSettings(){
   bobotAspek = {...bobotDraft};
+  targetAspek = {...targetDraft};
   persistBobot();
   returnFromBobotSettings();
 }
@@ -2305,17 +2329,12 @@ function refreshRaportPreview(prefix){
   const aspects = raportAspekList(sp, r);
   const overall = raportOverallPct(sp, r);
   document.getElementById(`raportPreview_${prefix}`).innerHTML = `
-    <div class="tag-note" style="margin-bottom:8px;">Nilai berikut dihitung otomatis dari data Dana, Laporan, dan Aktivitas pada kuartal terpilih — hanya Kesesuaian Asnaf, Target Penerima Manfaat, dan status "Ada Project" yang diisi manual.</div>
+    <div class="tag-note" style="margin-bottom:8px;">Nilai tiap aspek = Capaian ÷ Target × Bobot — dihitung otomatis dari data Dana, Laporan, dan Aktivitas pada kuartal terpilih (hanya Kesesuaian Asnaf, Target Penerima Manfaat, dan status "Ada Project" yang diisi manual).</div>
     <table>
-      <thead><tr><th>Aspek Penilaian</th><th class="num-cell">Nilai</th></tr></thead>
+      <thead>${ASPEK_TABLE_HEAD}</thead>
       <tbody>
-      ${aspects.map(a=>`<tr>
-        <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot: ${bobotAspek[a.key]??0}%)</span>`:''}
-          <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
-        </td>
-        <td class="num-cell">${pctBadge(a.pct)}</td>
-      </tr>`).join('')}
-      <tr><td style="font-weight:600;">Perkiraan Nilai Akhir</td><td class="num-cell" style="font-weight:600;">${overall===null?'-':overall+'% ('+gradeFromPct(overall)+')'}</td></tr>
+      ${renderAspekRowsHtml(aspects)}
+      <tr><td style="font-weight:600;">Perkiraan Nilai Akhir</td><td class="num-cell" colspan="2" style="font-weight:600;">${overall===null?'-':overall+'% ('+gradeFromPct(overall)+')'}</td></tr>
       </tbody>
     </table>`;
 }
@@ -2449,21 +2468,26 @@ function exportRaport(mid,spId,idx){
   doc.text('TABEL ASPEK PENILAIAN', marginL, y);
   y += 4;
 
-  const rows = aspects.map(a=>[
-    String(a.no),
-    a.nama,
-    a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('\n'),
-    a.key?`${bobotAspek[a.key]??0}%`:'-',
-    a.pct===null?'Belum tersedia':`${a.pct}%`,
-  ]);
+  const rows = aspects.map(a=>{
+    const kontribusi = aspekKontribusi(a);
+    return [
+      String(a.no),
+      a.nama,
+      a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('\n'),
+      a.key?`${bobotAspek[a.key]??0}%`:'-',
+      a.key?`${targetAspek[a.key]??100}%`:'-',
+      a.pct===null?'Belum tersedia':`${a.pct}%`,
+      kontribusi===null?'-':`${Math.round(kontribusi*10)/10}%`,
+    ];
+  });
   doc.autoTable({
     startY: y,
     margin: { left: marginL, right: marginR },
-    head: [['No','Aspek Penilaian','Rincian Perhitungan','Bobot','Nilai']],
+    head: [['No','Aspek Penilaian','Rincian Perhitungan','Bobot','Target','Capaian','Nilai']],
     body: rows,
-    styles: { fontSize: 8.5, cellPadding: 2.5, valign:'top', lineColor:[200,200,200], lineWidth:0.15 },
+    styles: { fontSize: 7.5, cellPadding: 2, valign:'top', lineColor:[200,200,200], lineWidth:0.15 },
     headStyles: { fillColor:[230,236,233], textColor:20, fontStyle:'bold' },
-    columnStyles: { 0:{cellWidth:8, halign:'center'}, 1:{cellWidth:44}, 3:{cellWidth:16, halign:'center'}, 4:{cellWidth:18, halign:'center'} },
+    columnStyles: { 0:{cellWidth:7, halign:'center'}, 1:{cellWidth:36}, 3:{cellWidth:13, halign:'center'}, 4:{cellWidth:13, halign:'center'}, 5:{cellWidth:15, halign:'center'}, 6:{cellWidth:13, halign:'center'} },
   });
 
   let finalY = doc.lastAutoTable.finalY + 10;
