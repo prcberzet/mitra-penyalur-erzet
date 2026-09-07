@@ -1359,6 +1359,16 @@ function saldoDana(d){
 function saldoTd(v){
   return `<td class="num-cell num-plain"${v<0?' style="color:var(--crit); font-weight:600;"':''}>${fmtRp(v)}</td>`;
 }
+function sortedDanaEntries(sp){
+  return sp.dana
+    .map((d,i)=>({d,i}))
+    .sort((x,y)=>{
+      const px = parseBulanTahun(x.d.bulan), py = parseBulanTahun(y.d.bulan);
+      const ty = (Number(px.tahun)||0) - (Number(py.tahun)||0);
+      if(ty) return ty;
+      return BULAN_NAMES.indexOf(px.bulanNama) - BULAN_NAMES.indexOf(py.bulanNama);
+    });
+}
 function renderDana(m,sp,c){
   const totalRapb = sp.dana.reduce((a,b)=>a+(b.rapbZakat||0)+(b.rapbInfak||0),0);
   const totalRealisasi = sp.dana.reduce((a,b)=>a+(b.realisasiZakat||0)+(b.realisasiInfak||0),0);
@@ -1380,7 +1390,7 @@ function renderDana(m,sp,c){
       <table>
         <thead><tr><th>Bulan</th><th class="num-cell">RAPB</th><th class="num-cell">Pencairan</th><th class="num-cell">Realisasi</th><th class="num-cell">Saldo</th><th></th></tr></thead>
         <tbody>
-        ${sp.dana.map((d,i)=>`
+        ${sortedDanaEntries(sp).map(({d,i})=>`
           <tr>
             <td>${d.bulan}</td>
             <td class="num-cell num-plain">${fmtRp(d.rapbZakat)}</td>
@@ -1404,7 +1414,7 @@ function renderDana(m,sp,c){
       <table>
         <thead><tr><th>Bulan</th><th class="num-cell">RAPB</th><th class="num-cell">Pencairan</th><th class="num-cell">Realisasi</th><th class="num-cell">Saldo</th><th></th></tr></thead>
         <tbody>
-        ${sp.dana.map((d,i)=>`
+        ${sortedDanaEntries(sp).map(({d,i})=>`
           <tr>
             <td>${d.bulan}</td>
             <td class="num-cell num-plain">${fmtRp(d.rapbInfak)}</td>
@@ -1427,7 +1437,7 @@ function renderDana(m,sp,c){
       <table>
         <thead><tr><th>Bulan</th><th class="num-cell">Saldo Zakat</th><th class="num-cell">Saldo Infak</th><th class="num-cell">Saldo Total</th><th>Status</th></tr></thead>
         <tbody>
-        ${sp.dana.map((d)=>{
+        ${sortedDanaEntries(sp).map(({d})=>{
           const { saldoZakat, saldoInfak, saldoTotal } = saldoDana(d);
           const totalPencairan = (d.pencairanZakat||0)+(d.pencairanInfak||0);
           const totalRealisasiRow = (d.realisasiZakat||0)+(d.realisasiInfak||0);
