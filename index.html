@@ -2018,12 +2018,17 @@ function renderAspekRowsHtml(aspects){
 }
 function gradeFromPct(pct){
   if(pct===null) return '-';
-  if(pct>=90) return 'A';
-  if(pct>=80) return 'A-';
-  if(pct>=70) return 'B+';
-  if(pct>=60) return 'B';
-  if(pct>=50) return 'C+';
-  return 'C';
+  if(pct>=85) return 'Excellent';
+  if(pct>=70) return 'Good';
+  if(pct>=50) return 'Average';
+  return 'Poor';
+}
+function gradeColorRgb(grade){
+  if(grade==='Excellent') return [22,163,74];   // hijau tua
+  if(grade==='Good') return [34,197,94];        // hijau
+  if(grade==='Average') return [217,119,6];     // oranye
+  if(grade==='Poor') return [220,38,38];        // merah
+  return [100,100,100];
 }
 function pctBadge(pct){
   if(pct===null) return `<span class="chip" style="background:var(--bg); color:var(--ink-faint);">Belum tersedia</span>`;
@@ -2486,36 +2491,47 @@ function exportRaport(mid,spId,idx){
     head: [['No','Aspek Penilaian','Rincian Perhitungan','Bobot','Target','Capaian','Nilai']],
     body: rows,
     styles: { fontSize: 7.5, cellPadding: 2, valign:'top', lineColor:[200,200,200], lineWidth:0.15 },
-    headStyles: { fillColor:[230,236,233], textColor:20, fontStyle:'bold' },
-    columnStyles: { 0:{cellWidth:7, halign:'center'}, 1:{cellWidth:36}, 3:{cellWidth:13, halign:'center'}, 4:{cellWidth:13, halign:'center'}, 5:{cellWidth:15, halign:'center'}, 6:{cellWidth:13, halign:'center'} },
+    headStyles: { fillColor:[230,236,233], textColor:20, fontStyle:'bold', halign:'center', valign:'middle' },
+    columnStyles: { 0:{cellWidth:10, halign:'center'}, 1:{cellWidth:38}, 3:{cellWidth:14, halign:'center'}, 4:{cellWidth:14, halign:'center'}, 5:{cellWidth:16, halign:'center'}, 6:{cellWidth:14, halign:'center'} },
   });
 
   let finalY = doc.lastAutoTable.finalY + 10;
-  doc.setFont('helvetica','bold'); doc.setFontSize(12);
-  doc.text(`Nilai Akhir Raport Kinerja : ${overall===null?'-':overall+'%'} (${grade})`, marginL, finalY);
+  doc.setFont('helvetica','bold'); doc.setFontSize(12); doc.setTextColor(20);
+  const nilaiLabel = `Nilai Akhir Raport Kinerja : ${overall===null?'-':overall+'%'} (`;
+  doc.text(nilaiLabel, marginL, finalY);
+  const gradeX = marginL + doc.getTextWidth(nilaiLabel);
+  const [gr,gg,gb] = gradeColorRgb(grade);
+  doc.setTextColor(gr,gg,gb);
+  doc.text(grade, gradeX, finalY);
+  doc.setTextColor(20);
+  doc.text(')', gradeX + doc.getTextWidth(grade), finalY);
+  finalY += 10;
 
-  if(r.catatan){
-    finalY += 8;
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
-    const catatanLines = doc.splitTextToSize(`Catatan: ${r.catatan}`, contentR-marginL);
-    doc.text(catatanLines, marginL, finalY);
-    finalY += catatanLines.length*5;
-  }
-  if(r.rekomendasi){
-    finalY += 6;
-    doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
-    const rekomendasiLines = doc.splitTextToSize(`Rekomendasi: ${r.rekomendasi}`, contentR-marginL);
-    doc.text(rekomendasiLines, marginL, finalY);
-    finalY += rekomendasiLines.length*5;
+  /* --- CATATAN & REKOMENDASI (selalu tampil sebagai kolom berbingkai) --- */
+  function drawBoxedNote(label, text, x, y, width){
+    const lines = doc.splitTextToSize(text && text.trim() ? text : '—', width-8);
+    const lineH = 4.5;
+    const boxH = Math.max(18, lines.length*lineH + 10);
+    doc.setDrawColor(120); doc.setLineWidth(0.2);
+    doc.rect(x, y, width, boxH);
+    doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20);
+    doc.text(`${label} :`, x+4, y+6);
+    doc.setFont('helvetica','normal'); doc.setFontSize(9);
+    doc.text(lines, x+4, y+12);
+    return boxH;
   }
 
   /* --- TANGGAL TERBIT + PENANDATANGAN ---
      Disusun Oleh (kiri) & Diperiksa Oleh (kanan) sebaris, Disahkan Oleh di baris bawah posisi tengah. */
   const pageH = doc.internal.pageSize.getHeight();
-  const sigBlockH = 14 /*tanggal terbit*/ + 38*2 /*2 baris ttd*/;
-  if(finalY + sigBlockH > pageH - 15){ doc.addPage(); finalY = 20; }
+  const sisaBlokH = 20 /*catatan*/ + 6 + 20 /*rekomendasi*/ + 14 /*kota,tanggal*/ + 38*2 /*2 baris ttd*/;
+  if(finalY + sisaBlokH > pageH - 15){ doc.addPage(); finalY = 20; }
 
-  finalY += 12;
+  const catatanH = drawBoxedNote('Catatan', r.catatan, marginL, finalY, contentR-marginL);
+  finalY += catatanH + 6;
+  const rekomendasiH = drawBoxedNote('Rekomendasi', r.rekomendasi, marginL, finalY, contentR-marginL);
+  finalY += rekomendasiH + 12;
+
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20);
   const tglTerbitStr = r.tanggalPenerbitan ? fmtDate(r.tanggalPenerbitan) : '—';
   doc.text(`${r.kota||'—'}, ${tglTerbitStr}`, pageW/2, finalY, {align:'center'});
