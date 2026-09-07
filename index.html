@@ -2418,17 +2418,17 @@ function exportRaport(mid,spId,idx){
   const namaProgram = m.program || 'Mitra Penyalur';
 
   /* --- HEADER --- */
-  // Pembagian zona horizontal supaya logo, judul, dan blok kanan tidak saling tumpang tindih
-  const logoZoneEnd = 63, rightZoneStart = 145;
-  const titleCenterX = (logoZoneEnd + rightZoneStart) / 2;
-  const titleMaxW = rightZoneStart - logoZoneEnd - 6;
+  const rightZoneStart = 138; // titik mulai blok kanan (No. Formulir/Tahun/Periode)
 
   // Kiri: logo Rumah Zakat utuh (ikon + tulisan), rasio asli dijaga
   const logoRatio = 900/323; // rasio asli file logo yang diupload
   const logoH = 12, logoW = logoH * logoRatio;
   doc.addImage(LOGO_RZ_BASE64, 'PNG', marginL, 12 + (20-logoH)/2, logoW, logoH);
+  const logoRightEdge = marginL + logoW;
 
-  // Tengah: judul — ukuran font menyesuaikan otomatis supaya selalu muat di zona tengah, tidak tumpang tindih logo/blok kanan
+  // Tengah: judul — presisi di titik tengah antara tepi kanan logo & mulainya blok kanan; ukuran font menyesuaikan otomatis
+  const titleCenterX = (logoRightEdge + rightZoneStart) / 2;
+  const titleMaxW = rightZoneStart - logoRightEdge - 6;
   doc.setTextColor(20);
   const line1 = 'PENILAIAN KINERJA MITRA PENYALUR';
   const line2 = 'RUMAH ZAKAT';
@@ -2446,12 +2446,22 @@ function exportRaport(mid,spId,idx){
   doc.text(line1, titleCenterX, 19, {align:'center'});
   doc.text(line2, titleCenterX, 25.5, {align:'center'});
 
-  // Kanan: No. Formulir / Tahun / Periode — rata kiri
+  // Kanan: No. Formulir / Tahun / Periode — label & titik dua sejajar
   doc.setFont('helvetica','normal');
-  doc.setFontSize(9);
-  doc.text(`No. Formulir : ${noFormulir}`, rightZoneStart, 15, {align:'left'});
-  doc.text(`Tahun : ${r.tahun}`, rightZoneStart, 20, {align:'left'});
-  doc.text(`Periode : ${q.label}`, rightZoneStart, 25, {align:'left'});
+  doc.setFontSize(8.5);
+  const headerRightRows = [
+    {label:'No. Formulir', value:noFormulir},
+    {label:'Tahun', value:String(r.tahun)},
+    {label:'Periode', value:q.label},
+  ];
+  const labelColW = Math.max(...headerRightRows.map(row=>doc.getTextWidth(row.label)));
+  const colonX = rightZoneStart + labelColW + 2;
+  headerRightRows.forEach((row,i)=>{
+    const ry = 15 + i*5;
+    doc.text(row.label, rightZoneStart, ry);
+    doc.text(':', colonX, ry);
+    doc.text(row.value, colonX + 3, ry);
+  });
 
   doc.setDrawColor(30); doc.setLineWidth(0.4);
   doc.line(marginL, 36, contentR, 36);
@@ -2465,7 +2475,7 @@ function exportRaport(mid,spId,idx){
   doc.text(`Mitra Penyalur : ${m.nama}`, marginL, y);
   y += 6;
   doc.text(`Program : ${namaProgram}`, marginL, y);
-  doc.text(`Sub Program : ${sp.nama}`, marginL + 95, y);
+  doc.text(`Sub Program : ${sp.nama}`, contentR, y, {align:'right'});
   y += 10;
 
   /* --- TABEL ASPEK PENILAIAN --- */
@@ -2508,28 +2518,33 @@ function exportRaport(mid,spId,idx){
   finalY += 10;
 
   /* --- CATATAN & REKOMENDASI (selalu tampil sebagai kolom berbingkai) --- */
-  function drawBoxedNote(label, text, x, y, width){
-    const lines = doc.splitTextToSize(text && text.trim() ? text : '—', width-8);
-    const lineH = 4.5;
-    const boxH = Math.max(18, lines.length*lineH + 10);
+  const boxW = contentR - marginL;
+  function boxHeightFor(text){
+    const lines = doc.splitTextToSize(text && text.trim() ? text : '—', boxW-8);
+    return Math.max(18, lines.length*4.5 + 10);
+  }
+  function drawBoxedNote(label, text, x, y, boxH){
+    const lines = doc.splitTextToSize(text && text.trim() ? text : '—', boxW-8);
     doc.setDrawColor(120); doc.setLineWidth(0.2);
-    doc.rect(x, y, width, boxH);
+    doc.rect(x, y, boxW, boxH);
     doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(20);
     doc.text(`${label} :`, x+4, y+6);
     doc.setFont('helvetica','normal'); doc.setFontSize(9);
     doc.text(lines, x+4, y+12);
-    return boxH;
   }
+  const catatanH = boxHeightFor(r.catatan);
+  const rekomendasiH = boxHeightFor(r.rekomendasi);
 
   /* --- TANGGAL TERBIT + PENANDATANGAN ---
-     Disusun Oleh (kiri) & Diperiksa Oleh (kanan) sebaris, Disahkan Oleh di baris bawah posisi tengah. */
+     Disusun Oleh (kiri) & Diperiksa Oleh (kanan) sebaris, Disahkan Oleh di baris bawah posisi tengah.
+     Kebutuhan tinggi dihitung presisi (bukan taksiran kasar) supaya tidak lompat halaman kalau sebenarnya masih muat. */
   const pageH = doc.internal.pageSize.getHeight();
-  const sisaBlokH = 20 /*catatan*/ + 6 + 20 /*rekomendasi*/ + 14 /*kota,tanggal*/ + 38*2 /*2 baris ttd*/;
-  if(finalY + sisaBlokH > pageH - 15){ doc.addPage(); finalY = 20; }
+  const tailNeeded = catatanH + 6 + rekomendasiH + 12 + 14 + 38*2;
+  if(finalY + tailNeeded > pageH - 15){ doc.addPage(); finalY = 20; }
 
-  const catatanH = drawBoxedNote('Catatan', r.catatan, marginL, finalY, contentR-marginL);
+  drawBoxedNote('Catatan', r.catatan, marginL, finalY, catatanH);
   finalY += catatanH + 6;
-  const rekomendasiH = drawBoxedNote('Rekomendasi', r.rekomendasi, marginL, finalY, contentR-marginL);
+  drawBoxedNote('Rekomendasi', r.rekomendasi, marginL, finalY, rekomendasiH);
   finalY += rekomendasiH + 12;
 
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20);
