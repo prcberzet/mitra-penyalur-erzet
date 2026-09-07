@@ -1371,14 +1371,15 @@ function sortedDanaEntries(sp){
 }
 function renderDana(m,sp,c){
   const totalRapb = sp.dana.reduce((a,b)=>a+(b.rapbZakat||0)+(b.rapbInfak||0),0);
+  const totalPencairan = sp.dana.reduce((a,b)=>a+(b.pencairanZakat||0)+(b.pencairanInfak||0),0);
   const totalRealisasi = sp.dana.reduce((a,b)=>a+(b.realisasiZakat||0)+(b.realisasiInfak||0),0);
-  const totalSaldo = sp.dana.length? saldoDana(sp.dana[sp.dana.length-1]).saldoTotal : 0;
+  const totalSaldo = sp.dana.reduce((a,d)=>a+saldoDana(d).saldoTotal,0);
   const pct = totalRapb? Math.round(totalRealisasi/totalRapb*100):0;
   c.innerHTML = `
     <div class="stat-grid">
-      <div class="stat-card"><div class="label">Total RAPB</div><div class="value plain">${fmtRp(totalRapb)}</div></div>
+      <div class="stat-card"><div class="label">Total Pencairan</div><div class="value plain">${fmtRp(totalPencairan)}</div></div>
       <div class="stat-card"><div class="label">Total Realisasi</div><div class="value plain">${fmtRp(totalRealisasi)}</div><div class="sub">${pct}% dari RAPB</div></div>
-      <div class="stat-card"><div class="label">Saldo Bulan Terakhir</div><div class="value plain"${totalSaldo<0?' style="color:var(--crit)"':''}>${fmtRp(totalSaldo)}</div><div class="sub">Gabungan Zakat + Infak</div></div>
+      <div class="stat-card"><div class="label">Total Saldo</div><div class="value plain"${totalSaldo<0?' style="color:var(--crit)"':''}>${fmtRp(totalSaldo)}</div><div class="sub">Gabungan Zakat + Infak, seluruh bulan</div></div>
       <div class="stat-card"><div class="label">Bulan Tercatat</div><div class="value">${sp.dana.length}</div><div class="sub">Frekuensi bulanan</div></div>
     </div>
 
@@ -1772,6 +1773,16 @@ function komponenCell(obj, extraHtml){
     ${ok?`<div class="link-cell" style="margin-top:4px;"><a href="${obj.link}" target="_blank">Lihat ↗</a></div>`:''}
   </td>`;
 }
+function sortedLaporanEntries(sp){
+  return sp.laporanBulanan
+    .map((l,i)=>({l,i}))
+    .sort((x,y)=>{
+      const px = parseBulanTahun(x.l.bulan), py = parseBulanTahun(y.l.bulan);
+      const ty = (Number(py.tahun)||0) - (Number(px.tahun)||0);
+      if(ty) return ty;
+      return BULAN_NAMES.indexOf(py.bulanNama) - BULAN_NAMES.indexOf(px.bulanNama);
+    });
+}
 function renderLaporan(m,sp,c){
   c.innerHTML = `
     <div class="panel">
@@ -1782,7 +1793,7 @@ function renderLaporan(m,sp,c){
       <table>
         <thead><tr><th>Bulan</th><th>SLA Penerimaan</th><th>Data Penerima Manfaat</th><th>Keuangan</th><th>Dokumentasi</th><th>Laporan Tertulis</th><th>PPT Presentasi</th><th></th></tr></thead>
         <tbody>
-        ${sp.laporanBulanan.map((l,i)=>{
+        ${sortedLaporanEntries(sp).map(({l,i})=>{
           const danaEntry = sp.dana.find(d=>d.bulan===l.bulan);
           const totalRealisasi = danaEntry ? (danaEntry.realisasiZakat||0)+(danaEntry.realisasiInfak||0) : 0;
           const pmMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div><div style="margin-top:4px;">${slaZReportBadge(l)}</div>${l.zreportLink?`<div class="link-cell" style="margin-top:4px;"><a href="${l.zreportLink}" target="_blank">Lihat ZReport ↗</a></div>`:''}`;
@@ -2046,6 +2057,18 @@ function pctBadge(pct){
   return `<span class="chip ${cls}">${pct}%</span>`;
 }
 
+function sortedRaportEntries(sp){
+  return sp.evaluasi.raport
+    .map((r,i)=>({r,i}))
+    .sort((x,y)=>{
+      const ty = (Number(y.r.tahun)||0) - (Number(x.r.tahun)||0);
+      if(ty) return ty;
+      return QUARTALS.findIndex(q=>q.key===y.r.kuartal) - QUARTALS.findIndex(q=>q.key===x.r.kuartal);
+    });
+}
+function sortedByTanggalDesc(arr){
+  return arr.map((x,i)=>({x,i})).sort((a,b)=>(b.x.tanggal||'').localeCompare(a.x.tanggal||''));
+}
 function renderEvaluasi(m,sp,c){
   c.innerHTML = `
     <div class="panel">
@@ -2053,7 +2076,7 @@ function renderEvaluasi(m,sp,c){
         <div><h3>Raport Kinerja — ${sp.nama}</h3><p>Penilaian berkala per kuartal terhadap kinerja sub program.</p></div>
         <button class="btn btn-primary btn-sm" onclick="openRaportModal('${m.id}','${sp.id}')">+ Terbitkan Raport</button>
       </div>
-      ${sp.evaluasi.raport.map((r,i)=>{
+      ${sortedRaportEntries(sp).map(({r,i})=>{
         const aspects = raportAspekList(sp,r);
         const overall = raportOverallPct(sp,r);
         return `<div class="raport-card">
@@ -2092,7 +2115,7 @@ function renderEvaluasi(m,sp,c){
       <table>
         <thead><tr><th>Tanggal</th><th>Agenda</th><th>Status</th><th></th></tr></thead>
         <tbody>
-        ${sp.evaluasi.jadwal.map((j,i)=>`
+        ${sortedByTanggalDesc(sp.evaluasi.jadwal).map(({x:j,i})=>`
           <tr>
             <td class="mono">${fmtDate(j.tanggal)}</td>
             <td>${j.agenda}</td>
@@ -2107,7 +2130,7 @@ function renderEvaluasi(m,sp,c){
         <div><h3>Catatan Hasil Meeting</h3><p>Ringkasan poin penting dari setiap pertemuan.</p></div>
         <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}','${sp.id}')">+ Tambah Catatan</button>
       </div>
-      ${sp.evaluasi.catatan.map((cn,i)=>`
+      ${sortedByTanggalDesc(sp.evaluasi.catatan).map(({x:cn,i})=>`
         <div class="legalitas-item">
           <div class="legalitas-left">
             <div class="name">${fmtDate(cn.tanggal)}</div>
