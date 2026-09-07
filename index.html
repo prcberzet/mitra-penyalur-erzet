@@ -793,8 +793,8 @@ let pejabatList = [               // daftar pejabat penandatangan raport, disink
   {id:'peg3', jabatan:'Direktur Program', nama:'Hendra Kusnadi', ttd:''},
 ];
 let bobotAspek = {                // % pembobotan tiap aspek penilaian raport, disinkron terpisah dari data mitra
-  project: 20, reguler: 30, dss: 25, pm: 25, dampak: 0,
-  dalamWaktu: 50, dalamKonten: 50, // bobot internal Aspek 1 & 2: Waktu Penerimaan Laporan vs Kesesuaian Konten
+  waktuProject: 10, kontenProject: 10, waktuReguler: 15, kontenReguler: 15,
+  dss: 25, pm: 25, dampak: 0,
 };
 
 const ALL_STAGES = [
@@ -1943,19 +1943,6 @@ function capaianPM(sp,kuartal,tahun){
   return laporanInQuarter(sp,kuartal,tahun).reduce((a,l)=>a+(l.penerima?.totalPP||0)+(l.penerima?.totalLM||0),0);
 }
 function asnafPct(v){ return v==='sesuai'?100:(v==='tidak'?0:null); }
-/* Gabungkan Waktu Penerimaan Laporan & Kesesuaian Konten jadi nilai Aspek 1/2,
-   berbobot sesuai bobotAspek.dalamWaktu vs bobotAspek.dalamKonten. */
-function combineAspekPct(waktu, konten){
-  const items = [];
-  if(waktu!==null) items.push({v:waktu, w:Number(bobotAspek.dalamWaktu)||0});
-  if(konten!==null) items.push({v:konten, w:Number(bobotAspek.dalamKonten)||0});
-  const totalW = items.reduce((a,x)=>a+x.w,0);
-  if(!totalW) return items.length? Math.round(items.reduce((a,x)=>a+x.v,0)/items.length) : null;
-  return Math.round(items.reduce((a,x)=>a+x.v*x.w,0)/totalW);
-}
-function kontenLabel(parts){
-  return 'Kesesuaian Konten (' + parts.map(p=>`${p.label}: ${p.pct===null?(p.text||'—'):p.pct+'%'}`).join(' · ') + ')';
-}
 function raportAspekList(sp, r){
   const waktu = waktuPenerimaanPct(sp,r.kuartal,r.tahun);
   const rilis = rilisBeritaPct(sp,r.kuartal,r.tahun);
@@ -1965,33 +1952,30 @@ function raportAspekList(sp, r){
   const targetPM = Number(r.targetPM)||0;
   const pmPct = targetPM ? Math.round(capaian/targetPM*100) : null;
   const aspects = [];
+
   if(r.adaProject){
+    aspects.push({key:'waktuProject', nama:'Waktu Penerimaan Laporan Project', pct:waktu,
+      detail:[{label:'Waktu Penerimaan Laporan (tab Laporan)', pct:waktu}]});
     const partsProject = [
       {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafProject), text: r.asnafProject==='sesuai'?'Sesuai':r.asnafProject==='tidak'?'Tidak Sesuai':'Belum diisi'},
       {label:'Rilis Berita & Dokumentasi', pct:rilis},
     ];
-    const kontenVals = partsProject.map(p=>p.pct).filter(v=>v!==null);
-    const kontenProject = kontenVals.length? Math.round(kontenVals.reduce((a,b)=>a+b,0)/kontenVals.length) : null;
-    aspects.push({key:'project', nama:'Laporan Pelaksanaan Project', pct: combineAspekPct(waktu, kontenProject),
-      detail:[
-        {label:'Waktu Penerimaan Laporan', pct:waktu},
-        {label:kontenLabel(partsProject), pct:kontenProject},
-      ]});
+    const kv1 = partsProject.map(p=>p.pct).filter(v=>v!==null);
+    const kontenProject = kv1.length? Math.round(kv1.reduce((a,b)=>a+b,0)/kv1.length) : null;
+    aspects.push({key:'kontenProject', nama:'Kesesuaian Konten Project', pct:kontenProject, detail:partsProject});
   }
-  {
-    const partsReguler = [
-      {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafReguler), text: r.asnafReguler==='sesuai'?'Sesuai':r.asnafReguler==='tidak'?'Tidak Sesuai':'Belum diisi'},
-      {label:'ZReport', pct:zrep},
-      {label:'Rilis Berita & Dokumentasi', pct:rilis},
-    ];
-    const kontenVals = partsReguler.map(p=>p.pct).filter(v=>v!==null);
-    const kontenReguler = kontenVals.length? Math.round(kontenVals.reduce((a,b)=>a+b,0)/kontenVals.length) : null;
-    aspects.push({key:'reguler', nama:'Laporan Pelaksanaan Program Reguler', pct: combineAspekPct(waktu, kontenReguler),
-      detail:[
-        {label:'Waktu Penerimaan Laporan', pct:waktu},
-        {label:kontenLabel(partsReguler), pct:kontenReguler},
-      ]});
-  }
+
+  aspects.push({key:'waktuReguler', nama:'Waktu Penerimaan Laporan Program Reguler', pct:waktu,
+    detail:[{label:'Waktu Penerimaan Laporan (tab Laporan)', pct:waktu}]});
+  const partsReguler = [
+    {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafReguler), text: r.asnafReguler==='sesuai'?'Sesuai':r.asnafReguler==='tidak'?'Tidak Sesuai':'Belum diisi'},
+    {label:'ZReport', pct:zrep},
+    {label:'Rilis Berita & Dokumentasi', pct:rilis},
+  ];
+  const kv2 = partsReguler.map(p=>p.pct).filter(v=>v!==null);
+  const kontenReguler = kv2.length? Math.round(kv2.reduce((a,b)=>a+b,0)/kv2.length) : null;
+  aspects.push({key:'kontenReguler', nama:'Kesesuaian Konten Program Reguler', pct:kontenReguler, detail:partsReguler});
+
   aspects.push({key:'dss', nama:'Penyerapan DSS', pct:dss, detail:[{label:'Realisasi ÷ Dana Cair', pct:dss}]});
   aspects.push({key:'pm', nama:'Pencapaian Target Penerima Manfaat', pct:pmPct, detail:[{label:`Capaian ${capaian} dari Target ${targetPM||'-'}`, pct:pmPct}]});
   aspects.push({key:'dampak', nama:'Dampak Program', pct:null, detail:[{label:'Akan dikembangkan kemudian', pct:null}]});
@@ -2181,11 +2165,13 @@ function simpanPejabatSettings(){
 let bobotDraft = {};
 let bobotSettingsReturnTo = null; // supaya bisa kembali ke form Raport setelah atur bobot
 const BOBOT_LABELS = [
-  {key:'project', label:'1. Laporan Pelaksanaan Project'},
-  {key:'reguler', label:'2. Laporan Pelaksanaan Program Reguler'},
-  {key:'dss', label:'3. Penyerapan DSS'},
-  {key:'pm', label:'4. Pencapaian Target Penerima Manfaat'},
-  {key:'dampak', label:'5. Dampak Program'},
+  {key:'waktuProject', label:'1. Waktu Penerimaan Laporan Project'},
+  {key:'kontenProject', label:'2. Kesesuaian Konten Project (Asnaf, Rilis Berita & Dokumentasi)'},
+  {key:'waktuReguler', label:'3. Waktu Penerimaan Laporan Program Reguler'},
+  {key:'kontenReguler', label:'4. Kesesuaian Konten Program Reguler (Asnaf, ZReport, Rilis Berita & Dokumentasi)'},
+  {key:'dss', label:'5. Penyerapan DSS'},
+  {key:'pm', label:'6. Pencapaian Target Penerima Manfaat'},
+  {key:'dampak', label:'7. Dampak Program'},
 ];
 function openBobotSettingsModal(){
   bobotDraft = {...bobotAspek};
@@ -2196,21 +2182,13 @@ function bobotTotalText(total){
 }
 function renderBobotSettingsModal(){
   const total = BOBOT_LABELS.reduce((a,b)=>a+(Number(bobotDraft[b.key])||0),0);
-  const totalDalam = (Number(bobotDraft.dalamWaktu)||0) + (Number(bobotDraft.dalamKonten)||0);
   openModalWide(`
     <h3>Pengaturan % Pembobotan Aspek Penilaian</h3>
-    <div class="tag-note">Bobot menentukan kontribusi tiap aspek ke Nilai Akhir Raport Kinerja. Kalau Aspek Project tidak berlaku (checkbox "Ada Project" tidak dicentang saat menerbitkan raport), bobotnya otomatis didistribusikan ulang secara proporsional ke aspek lain — tidak perlu diatur manual per raport.</div>
+    <div class="tag-note">Bobot menentukan kontribusi tiap aspek ke Nilai Akhir Raport Kinerja. Kalau Aspek 1 & 2 (Project) tidak berlaku (checkbox "Ada Project" tidak dicentang saat menerbitkan raport), bobot keduanya otomatis didistribusikan ulang secara proporsional ke aspek lain, dan penomoran aspek mulai dari 1 lagi (Waktu Penerimaan Laporan Program Reguler jadi nomor 1) — tidak perlu diatur manual per raport.</div>
     ${BOBOT_LABELS.map(b=>`
       <div class="field"><label>${b.label} (%)</label><input type="number" value="${bobotDraft[b.key]??0}" oninput="bobotDraft['${b.key}']=Number(this.value)||0; refreshBobotTotal();"></div>
     `).join('')}
     <div id="bobotTotalInfo" class="tag-note" style="font-weight:600;">${bobotTotalText(total)}</div>
-
-    <div style="font-size:12px; font-weight:600; color:var(--brand); margin:16px 0 6px;">Bobot Internal Aspek 1 & 2 (Laporan Project / Program Reguler)</div>
-    <div class="tag-note">Aspek "Laporan Pelaksanaan Project" maupun "Program Reguler" masing-masing dipecah jadi 2 komponen: Waktu Penerimaan Laporan, dan Kesesuaian Konten (Kesesuaian Asnaf, ZReport khusus Reguler, Rilis Berita & Dokumentasi — dirata-rata sederhana). Bobot berikut berlaku sama untuk Aspek 1 maupun Aspek 2.</div>
-    <div class="field"><label>Waktu Penerimaan Laporan (%)</label><input type="number" value="${bobotDraft.dalamWaktu??0}" oninput="bobotDraft.dalamWaktu=Number(this.value)||0; refreshBobotTotal();"></div>
-    <div class="field"><label>Kesesuaian Konten (%)</label><input type="number" value="${bobotDraft.dalamKonten??0}" oninput="bobotDraft.dalamKonten=Number(this.value)||0; refreshBobotTotal();"></div>
-    <div id="bobotDalamTotalInfo" class="tag-note" style="font-weight:600;">${bobotTotalText(totalDalam)}</div>
-
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn" onclick="batalBobotSettings()">Batal</button>
       <button class="btn btn-primary" onclick="simpanBobotSettings()">Simpan Pengaturan</button>
@@ -2219,11 +2197,8 @@ function renderBobotSettingsModal(){
 }
 function refreshBobotTotal(){
   const total = BOBOT_LABELS.reduce((a,b)=>a+(Number(bobotDraft[b.key])||0),0);
-  const totalDalam = (Number(bobotDraft.dalamWaktu)||0) + (Number(bobotDraft.dalamKonten)||0);
   const el = document.getElementById('bobotTotalInfo');
   if(el) el.textContent = bobotTotalText(total);
-  const elD = document.getElementById('bobotDalamTotalInfo');
-  if(elD) elD.textContent = bobotTotalText(totalDalam);
 }
 function returnFromBobotSettings(){
   const ret = bobotSettingsReturnTo;
