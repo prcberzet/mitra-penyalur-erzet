@@ -1966,7 +1966,7 @@ function dssPct(sp,kuartal,tahun){
   return totalCair? Math.round(totalRealisasi/totalCair*100) : 0;
 }
 function capaianPM(sp,kuartal,tahun){
-  return laporanInQuarter(sp,kuartal,tahun).reduce((a,l)=>a+(l.penerima?.totalPP||0)+(l.penerima?.totalLM||0),0);
+  return laporanInQuarter(sp,kuartal,tahun).reduce((a,l)=>a+(l.penerima?.totalPP||0),0);
 }
 function asnafPct(v){ return v==='sesuai'?100:(v==='tidak'?0:null); }
 function raportAspekList(sp, r){
