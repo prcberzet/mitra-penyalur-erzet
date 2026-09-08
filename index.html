@@ -2505,9 +2505,15 @@ function exportRaport(mid,spId,idx){
   doc.text('IDENTITAS DOKUMEN', marginL, y);
   y += 6;
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
-  doc.text(`Mitra Penyalur : ${m.nama}`, marginL, y);
+  const identLabelW = Math.max(doc.getTextWidth('Mitra Penyalur'), doc.getTextWidth('Program'));
+  const identColonX = marginL + identLabelW + 2;
+  doc.text('Mitra Penyalur', marginL, y);
+  doc.text(':', identColonX, y);
+  doc.text(m.nama, identColonX + 3, y);
   y += 6;
-  doc.text(`Program : ${namaProgram}`, marginL, y);
+  doc.text('Program', marginL, y);
+  doc.text(':', identColonX, y);
+  doc.text(namaProgram, identColonX + 3, y);
   doc.text(`Sub Program : ${sp.nama}`, contentR, y, {align:'right'});
   y += 10;
 
@@ -2536,6 +2542,28 @@ function exportRaport(mid,spId,idx){
     styles: { fontSize: 7.5, cellPadding: 2, valign:'top', lineColor:[200,200,200], lineWidth:0.15 },
     headStyles: { fillColor:[230,236,233], textColor:20, fontStyle:'bold', halign:'center', valign:'middle' },
     columnStyles: { 0:{cellWidth:10, halign:'center'}, 1:{cellWidth:38}, 3:{cellWidth:14, halign:'center'}, 4:{cellWidth:14, halign:'center'}, 5:{cellWidth:16, halign:'center'}, 6:{cellWidth:14, halign:'center'} },
+    willDrawCell: (data) => {
+      // Kolom "Rincian Perhitungan": kosongkan teks bawaan, akan digambar manual (titik dua sejajar) di didDrawCell
+      if(data.section==='body' && data.column.index===2){
+        data.cell.text = [];
+      }
+    },
+    didDrawCell: (data) => {
+      if(data.section!=='body' || data.column.index!==2) return;
+      const a = aspects[data.row.index];
+      if(!a || !a.detail || !a.detail.length) return;
+      doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(20);
+      const labelW = Math.max(...a.detail.map(d=>doc.getTextWidth(d.label)));
+      const cx = data.cell.x + 2, colonX = cx + labelW + 1;
+      let ty = data.cell.y + 4;
+      a.detail.forEach(d=>{
+        const val = d.pct===null ? (d.text||'—') : `${d.pct}%`;
+        doc.text(d.label, cx, ty);
+        doc.text(':', colonX, ty);
+        doc.text(val, colonX + 3, ty);
+        ty += 3.2;
+      });
+    },
   });
 
   let finalY = doc.lastAutoTable.finalY + 10;
