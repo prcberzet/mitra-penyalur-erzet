@@ -812,6 +812,7 @@ const TABS = ALL_STAGES.filter(s=>s.key!=='pra');
 
 const fmtRp = n => 'Rp ' + (n||0).toLocaleString('id-ID');
 const fmtDate = d => d ? new Date(d).toLocaleDateString('id-ID',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+const fmtDateFull = d => d ? new Date(d+'T00:00:00').toLocaleDateString('id-ID',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '—';
 
 /* ---------------------------- URL ROUTING -------------------------------
    Skema: {basePath}/{slug-nama-mitra}/{slug-nama-subprogram}/{stage}
@@ -2120,7 +2121,10 @@ function renderEvaluasi(m,sp,c){
             <td class="mono">${fmtDate(j.tanggal)}</td>
             <td>${j.agenda}</td>
             <td><span class="chip ${j.status==='selesai'?'chip-ok':'chip-warn'}">${j.status==='selesai'?'Selesai':'Terjadwal'}</span></td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusJadwal('${m.id}','${sp.id}',${i})">✕</button></td>
+            <td class="row-actions">
+              <button class="icon-btn" onclick="openEditJadwalModal('${m.id}','${sp.id}',${i})" title="Edit jadwal">✎</button>
+              <button class="icon-btn" onclick="hapusJadwal('${m.id}','${sp.id}',${i})">✕</button>
+            </td>
           </tr>`).join('') || `<tr><td colspan="4"><div class="empty-state">Belum ada jadwal meeting.</div></td></tr>`}
         </tbody>
       </table>
@@ -2131,12 +2135,16 @@ function renderEvaluasi(m,sp,c){
         <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}','${sp.id}')">+ Tambah Catatan</button>
       </div>
       ${sortedByTanggalDesc(sp.evaluasi.catatan).map(({x:cn,i})=>`
-        <div class="legalitas-item">
+        <div class="legalitas-item" style="cursor:pointer" onclick="lihatCatatan('${m.id}','${sp.id}',${i})">
           <div class="legalitas-left">
-            <div class="name">${fmtDate(cn.tanggal)}</div>
-            <div class="date">${cn.ringkasan}</div>
+            <div class="name">${fmtDate(cn.tanggal)}${cn.waktu?` · ${cn.waktu}`:''} — ${escHtml(cn.agenda)||escHtml(cn.ringkasan)||'(Tanpa agenda)'}</div>
+            <div class="date">${escHtml(cn.tempat)||escHtml(cn.ringkasan)||''}</div>
           </div>
-          <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
+          <div style="display:flex; gap:4px;" onclick="event.stopPropagation();">
+            <button class="icon-btn" title="Edit catatan" onclick="openEditCatatanModal('${m.id}','${sp.id}',${i})">✎</button>
+            <button class="icon-btn" title="Unduh Notulensi Word" onclick="unduhNotulensi('${m.id}','${sp.id}',${i})">⬇️</button>
+            <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
+          </div>
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
     </div>`;
 }
@@ -2593,25 +2601,35 @@ function exportRaport(mid,spId,idx){
     doc.setFont('helvetica','normal'); doc.setFontSize(9);
     doc.text(lines, x+4, y+12);
   }
-  const catatanH = boxHeightFor(r.catatan);
-  const rekomendasiH = boxHeightFor(r.rekomendasi);
-
   /* --- TANGGAL TERBIT + PENANDATANGAN ---
      Disusun Oleh (kiri) & Diperiksa Oleh (kanan) sebaris, Disahkan Oleh di baris bawah posisi tengah.
-     Kebutuhan tinggi dihitung presisi (bukan taksiran kasar) supaya tidak lompat halaman kalau sebenarnya masih muat. */
+     Catatan, Rekomendasi, dan blok tanggal+tanda-tangan masing-masing dicek RUANGNYA SENDIRI-SENDIRI
+     (bukan sebagai satu blok raksasa) supaya bagian yang sebenarnya masih muat tidak ikut terdorong
+     ke halaman baru hanya karena satu bagian lain (biasanya tanda tangan) yang kebetulan tidak muat. */
   const pageH = doc.internal.pageSize.getHeight();
-  const tailNeeded = catatanH + 6 + rekomendasiH + 12 + 14 + 38*2;
-  if(finalY + tailNeeded > pageH - 15){ doc.addPage(); finalY = 20; }
+  const bottomLimit = pageH - 15;
+  function ensureSpace(neededH){
+    if(finalY + neededH > bottomLimit){ doc.addPage(); finalY = 20; }
+  }
 
+  const catatanH = boxHeightFor(r.catatan);
+  ensureSpace(catatanH);
   drawBoxedNote('Catatan', r.catatan, marginL, finalY, catatanH);
   finalY += catatanH + 6;
+
+  const rekomendasiH = boxHeightFor(r.rekomendasi);
+  ensureSpace(rekomendasiH);
   drawBoxedNote('Rekomendasi', r.rekomendasi, marginL, finalY, rekomendasiH);
-  finalY += rekomendasiH + 12;
+  finalY += rekomendasiH + 10;
+
+  // Tanggal + blok tanda tangan dicek sebagai SATU kesatuan (baris tanggal tidak boleh terpisah
+  // sendirian dari tanda tangannya di halaman sebelumnya).
+  ensureSpace(10 + 38 + 31);
 
   doc.setFont('helvetica','normal'); doc.setFontSize(9.5); doc.setTextColor(20);
   const tglTerbitStr = r.tanggalPenerbitan ? fmtDate(r.tanggalPenerbitan) : '—';
   doc.text(`${r.kota||'—'}, ${tglTerbitStr}`, pageW/2, finalY, {align:'center'});
-  finalY += 14;
+  finalY += 10;
 
   function drawSignatureBlock(label, p, anchorX, align){
     const imgW=30, imgH=16, lineW=45;
@@ -2668,20 +2686,71 @@ function hapusJadwal(mid,spId,idx){
   persistMitra(m);
   renderAll();
 }
+function openEditJadwalModal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const j = sp.evaluasi.jadwal[idx];
+  openModal(`
+    <h3>Edit Jadwal Meeting Evaluasi</h3>
+    <div class="field"><label>Tanggal</label><input id="f_ejtgl" type="date" value="${j.tanggal||''}"></div>
+    <div class="field"><label>Agenda</label><input id="f_ejagenda" value="${escAttr(j.agenda)}"></div>
+    <div class="field"><label>Status</label><select id="f_ejstatus"><option value="terjadwal" ${j.status!=='selesai'?'selected':''}>Terjadwal</option><option value="selesai" ${j.status==='selesai'?'selected':''}>Selesai</option></select></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditJadwal('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+  `);
+}
+function simpanEditJadwal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const j = sp.evaluasi.jadwal[idx];
+  const agenda = document.getElementById('f_ejagenda').value.trim();
+  if(!agenda) return;
+  j.tanggal = document.getElementById('f_ejtgl').value || j.tanggal;
+  j.agenda = agenda;
+  j.status = document.getElementById('f_ejstatus').value;
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function catatanFormFieldsHtml(prefix, cn, mitraNama){
+  cn = cn || {};
+  return `
+    <div class="field"><label>Tanggal</label><input id="f_${prefix}tgl" type="date" value="${cn.tanggal||''}"></div>
+    <div class="field"><label>Waktu</label><input id="f_${prefix}waktu" type="time" value="${cn.waktu||''}"></div>
+    <div class="field"><label>Tempat</label><input id="f_${prefix}tempat" value="${escAttr(cn.tempat)}" placeholder="Contoh: Kantor Rumah Zakat / Zoom Meeting"></div>
+    <div class="field"><label>Peserta (satu nama per baris)</label><textarea id="f_${prefix}peserta" placeholder="Nama peserta 1&#10;Nama peserta 2">${escHtml((cn.peserta||[]).join('\n'))}</textarea></div>
+    <div class="field"><label>Agenda</label><input id="f_${prefix}agenda" value="${escAttr(cn.agenda)}" placeholder="Contoh: Evaluasi Progres Triwulan"></div>
+    <div class="field"><label>Bahasan Diskusi</label><textarea id="f_${prefix}bahasan" placeholder="Ringkasan pembahasan meeting...">${escHtml(cn.bahasan||cn.ringkasan)}</textarea></div>
+    <div class="field"><label>Tindak Lanjut (satu poin per baris)</label><textarea id="f_${prefix}tindak" placeholder="Poin tindak lanjut 1&#10;Poin tindak lanjut 2">${escHtml((cn.tindakLanjut||[]).join('\n'))}</textarea></div>
+    <div class="field"><label>Perwakilan Rumah Zakat</label><input id="f_${prefix}rz" value="${escAttr(cn.perwakilanRZ)}" placeholder="Nama perwakilan Rumah Zakat"></div>
+    <div class="field"><label>Perwakilan ${escHtml(mitraNama)}</label><input id="f_${prefix}mitra" value="${escAttr(cn.perwakilanMitra)}" placeholder="Nama perwakilan mitra"></div>
+  `;
+}
+function readCatatanForm(prefix){
+  return {
+    tanggal: document.getElementById(`f_${prefix}tgl`).value || new Date().toISOString().slice(0,10),
+    waktu: document.getElementById(`f_${prefix}waktu`).value || '',
+    tempat: document.getElementById(`f_${prefix}tempat`).value || '',
+    peserta: document.getElementById(`f_${prefix}peserta`).value.split('\n').map(s=>s.trim()).filter(Boolean),
+    agenda: document.getElementById(`f_${prefix}agenda`).value.trim(),
+    bahasan: document.getElementById(`f_${prefix}bahasan`).value || '',
+    tindakLanjut: document.getElementById(`f_${prefix}tindak`).value.split('\n').map(s=>s.trim()).filter(Boolean),
+    perwakilanRZ: document.getElementById(`f_${prefix}rz`).value || '',
+    perwakilanMitra: document.getElementById(`f_${prefix}mitra`).value || '',
+  };
+}
 function openCatatanModal(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
   openModal(`
     <h3>Tambah Catatan Hasil Meeting</h3>
-    <div class="field"><label>Tanggal</label><input id="f_ctgl" type="date"></div>
-    <div class="field"><label>Ringkasan</label><textarea id="f_cringkasan" placeholder="Poin penting hasil meeting..."></textarea></div>
+    ${catatanFormFieldsHtml('c', null, m.nama)}
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanCatatan('${mid}','${spId}')">Simpan</button></div>
   `);
 }
 function simpanCatatan(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const ringkasan = document.getElementById('f_cringkasan').value.trim();
-  if(!ringkasan) return;
-  sp.evaluasi.catatan.push({tanggal:document.getElementById('f_ctgl').value||new Date().toISOString().slice(0,10), ringkasan});
+  const data = readCatatanForm('c');
+  if(!data.agenda) return;
+  sp.evaluasi.catatan.push(data);
   persistMitra(m);
   closeModal(); renderAll();
 }
@@ -2691,6 +2760,106 @@ function hapusCatatan(mid,spId,idx){
   sp.evaluasi.catatan.splice(idx,1);
   persistMitra(m);
   renderAll();
+}
+function openEditCatatanModal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const cn = sp.evaluasi.catatan[idx];
+  openModal(`
+    <h3>Edit Catatan Hasil Meeting</h3>
+    ${catatanFormFieldsHtml('ec', cn, m.nama)}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditCatatan('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+  `);
+}
+function simpanEditCatatan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const data = readCatatanForm('ec');
+  if(!data.agenda) return;
+  sp.evaluasi.catatan[idx] = data;
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function lihatCatatan(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const cn = sp.evaluasi.catatan[idx];
+  const pesertaHtml = (cn.peserta&&cn.peserta.length) ? `<ol style="margin:4px 0 0 18px; padding:0;">${cn.peserta.map(p=>`<li>${escHtml(p)}</li>`).join('')}</ol>` : '<span style="color:var(--ink-faint)">—</span>';
+  const tindakHtml = (cn.tindakLanjut&&cn.tindakLanjut.length) ? `<ul style="margin:4px 0 0 18px; padding:0;">${cn.tindakLanjut.map(p=>`<li>${escHtml(p)}</li>`).join('')}</ul>` : '<span style="color:var(--ink-faint)">—</span>';
+  openModal(`
+    <h3>Detail Notulensi Meeting</h3>
+    <div class="field"><label>Hari / Tanggal</label><div>${fmtDateFull(cn.tanggal)}</div></div>
+    <div class="field"><label>Waktu</label><div>${escHtml(cn.waktu)||'—'}</div></div>
+    <div class="field"><label>Tempat</label><div>${escHtml(cn.tempat)||'—'}</div></div>
+    <div class="field"><label>Peserta</label>${pesertaHtml}</div>
+    <div class="field"><label>Agenda</label><div>${escHtml(cn.agenda)||escHtml(cn.ringkasan)||'—'}</div></div>
+    <div class="field"><label>Bahasan Diskusi</label><div style="white-space:pre-wrap;">${escHtml(cn.bahasan)||escHtml(cn.ringkasan)||'—'}</div></div>
+    <div class="field"><label>Tindak Lanjut</label>${tindakHtml}</div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Tutup</button>
+      <button class="btn btn-danger-ghost" onclick="hapusCatatan('${mid}','${spId}',${idx}); closeModal();">Hapus</button>
+      <button class="btn" onclick="openEditCatatanModal('${mid}','${spId}',${idx})">✎ Edit</button>
+      <button class="btn btn-primary" onclick="unduhNotulensi('${mid}','${spId}',${idx})">⬇️ Unduh Notulensi (Word)</button>
+    </div>
+  `);
+}
+function sanitizeFilename(s){
+  return String(s||'').replace(/[\\/:*?"<>|]/g,'-').replace(/\s+/g,' ').trim();
+}
+/* Generate dokumen Word (.doc) mengikuti layout Template_Notulensi_Meeting.docx:
+   logo RZ, tabel identitas & aspek pertemuan, blok tanda tangan Perwakilan RZ / Mitra.
+   Nama file: 'yyyy-mm-dd Notulensi Meeting $agenda'. */
+function unduhNotulensi(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const cn = sp.evaluasi.catatan[idx];
+  const agenda = cn.agenda || cn.ringkasan || 'Meeting';
+  const tanggal = cn.tanggal || new Date().toISOString().slice(0,10);
+  const pesertaLi = (cn.peserta&&cn.peserta.length? cn.peserta : ['—']).map(p=>`<li>${escHtml(p)}</li>`).join('');
+  const tindakLi = (cn.tindakLanjut&&cn.tindakLanjut.length? cn.tindakLanjut : ['—']).map(p=>`<li>${escHtml(p)}</li>`).join('');
+  const bahasan = escHtml(cn.bahasan||cn.ringkasan||'—').replace(/\n/g,'<br>');
+  const html = `<!DOCTYPE html>
+<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+<head>
+<meta charset="utf-8">
+<title>Notulensi Meeting</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom><w:DoNotOptimizeForBrowser/></w:WordDocument></xml><![endif]-->
+<style>@page { size: 21cm 29.7cm; margin: 2cm; }</style>
+</head>
+<body style="font-family:Calibri,Arial,sans-serif; font-size:11pt; color:#222222;">
+  <div style="text-align:right; margin-bottom:10px;"><img src="${LOGO_RZ_BASE64}" width="120" height="46"></div>
+  <table style="border-collapse:collapse; width:100%;">
+    <tr><td colspan="2" style="border:1px solid #E8A33D; background:#F2994A; color:#ffffff; font-weight:bold; text-align:center; font-size:13pt; padding:8px;">Notulensi Meeting</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; width:22%; padding:8px 10px; vertical-align:top;">Hari / Tanggal</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${fmtDateFull(tanggal)}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Waktu</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${escHtml(cn.waktu)||'—'}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Tempat</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${escHtml(cn.tempat)||'—'}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Peserta</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;"><ol style="margin:0; padding-left:18px;">${pesertaLi}</ol></td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Agenda</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${escHtml(agenda)}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:600; padding:8px 10px; vertical-align:top;">Bahasan Diskusi</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;">${bahasan}</td></tr>
+    <tr><td style="border:1px solid #E8A33D; background:#FBF3E9; font-weight:bold; padding:8px 10px; vertical-align:top;">Tindak Lanjut</td><td style="border:1px solid #E8A33D; padding:8px 10px; vertical-align:top;"><ul style="margin:0; padding-left:18px;">${tindakLi}</ul></td></tr>
+  </table>
+  <p style="margin-top:18px;">Demikian notulensi ini disusun dengan sebenar-benarnya, mohon koreksi jika terdapat kesalahan</p>
+  <p>Notulen<br>Program Collaboration Admin</p>
+  <table style="border-collapse:collapse; width:100%; margin-top:10px;">
+    <tr><td colspan="2" style="border:none; text-align:center; font-weight:600; padding:6px 10px;">Disepakati oleh</td></tr>
+    <tr>
+      <td style="border:none; width:50%; text-align:center; font-weight:600; padding:6px 10px;">Perwakilan Rumah Zakat</td>
+      <td style="border:none; width:50%; text-align:center; font-weight:600; padding:6px 10px;">Perwakilan ${escHtml(m.nama)}</td>
+    </tr>
+    <tr>
+      <td style="border:none; text-align:center; padding-top:60px;">${escHtml(cn.perwakilanRZ)||'&nbsp;'}</td>
+      <td style="border:none; text-align:center; padding-top:60px;">${escHtml(cn.perwakilanMitra)||'&nbsp;'}</td>
+    </tr>
+  </table>
+</body>
+</html>`;
+  const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+  const filename = `${tanggal} Notulensi Meeting ${sanitizeFilename(agenda)}.doc`;
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
 }
 
 /* --------------------------- OVERVIEW (ALL MITRA) ----------------------- */
