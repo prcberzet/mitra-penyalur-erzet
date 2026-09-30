@@ -1577,16 +1577,6 @@ function bulanFromTanggal(tgl){
   if(isNaN(d.getTime())) return '—';
   return `${BULAN_NAMES[d.getMonth()]} ${d.getFullYear()}`;
 }
-function rekapPerKota(list){
-  const map = {};
-  list.forEach(a=>{
-    const kota = a.lokasi || '(Tanpa Lokasi)';
-    if(!map[kota]) map[kota] = {kota, jumlahRilis:0, totalDokumentasi:0};
-    map[kota].jumlahRilis++;
-    map[kota].totalDokumentasi += Number(a.jumlahDokumentasi)||0;
-  });
-  return Object.values(map).sort((a,b)=>b.jumlahRilis-a.jumlahRilis);
-}
 function lokasiDatalistOptions(sp){
   const uniq = [...new Set(sp.aktivitasHarian.map(a=>a.lokasi).filter(Boolean))];
   return uniq.map(k=>`<option value="${escAttr(k)}">`).join('');
@@ -1642,10 +1632,7 @@ function renderAktivitas(m,sp,c){
     .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
   const harianBerjalan = harianSorted.filter(({a})=>(a.tanggal||'').slice(0,7) >= currentYM);
   const bulanLalu = rekapPerBulan(sp.aktivitasHarian).filter(x=>x.ym < currentYM);
-  const kotaRekap = rekapPerKota(sp.aktivitasHarian);
   const pekanRekap = rekapPerPekan(sp.aktivitasHarian, sp.targetRilisPekanan);
-  const totalRilis = sp.aktivitasHarian.length;
-  const totalDok = sp.aktivitasHarian.reduce((s,a)=>s+(Number(a.jumlahDokumentasi)||0),0);
   c.innerHTML = `
     <datalist id="lokasiOptions">${lokasiDatalistOptions(sp)}</datalist>
     <div class="panel">
@@ -1707,17 +1694,6 @@ function renderAktivitas(m,sp,c){
                 <td>${status?`<span class="chip ${statusChipClass[status]}">${p.jumlahRilis}/${p.target}</span>`:'—'}</td>
               </tr>`;
             }).join('')}
-          </tbody>
-        </table>
-      </div>` : ''}
-      ${kotaRekap.length ? `
-      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-        <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Kota</div>
-        <table style="font-size:12px;">
-          <thead><tr><th>Kota</th><th style="text-align:right;">Jumlah Rilis Berita</th><th style="text-align:right;">Total Dokumentasi</th></tr></thead>
-          <tbody>
-            ${kotaRekap.map(k=>`<tr><td>${escHtml(k.kota)}</td><td style="text-align:right;">${k.jumlahRilis}</td><td style="text-align:right;">${k.totalDokumentasi}</td></tr>`).join('')}
-            <tr style="font-weight:600; border-top:1px solid var(--line);"><td>Total</td><td style="text-align:right;">${totalRilis}</td><td style="text-align:right;">${totalDok}</td></tr>
           </tbody>
         </table>
       </div>` : ''}
