@@ -1607,20 +1607,39 @@ function rekapPerBulan(list){
     .map(x=>({ym:x.ym, bulanLabel:x.bulanLabel, jumlahRilis:x.jumlahRilis, jumlahKota:x.kotaSet.size, totalDokumentasi:x.totalDokumentasi}))
     .sort((a,b)=>b.ym.localeCompare(a.ym));
 }
+function pekanPct(jumlahRilis,target){
+  if(!target) return null;
+  return Math.round(jumlahRilis/target*100);
+}
+function statusFromPct(pct){
+  if(pct===null) return null;
+  if(pct>=100) return 'ok';
+  if(pct>0) return 'warn';
+  return 'crit';
+}
+/* Selalu bangun 4 baris pekan penuh per bulan (termasuk pekan yang 0 entri) —
+   supaya rata-rata bulanan nanti benar-benar rata-rata dari 4 pekan, bukan cuma
+   pekan yang kebetulan ada datanya. */
 function rekapPerPekan(list, target){
-  const map = {};
+  const bulanMap = {};
   list.forEach(a=>{
     const pekan = pekanFromTanggal(a.tanggal);
-    if(!pekan) return;
-    const bulanLabel = bulanFromTanggal(a.tanggal);
-    const key = `${a.tanggal.slice(0,7)}-P${pekan}`;
-    if(!map[key]) map[key] = {key, bulanLabel, pekan, jumlahRilis:0, totalDokumentasi:0};
-    map[key].jumlahRilis++;
-    map[key].totalDokumentasi += Number(a.jumlahDokumentasi)||0;
+    if(!pekan || !a.tanggal) return;
+    const ym = a.tanggal.slice(0,7);
+    if(!bulanMap[ym]) bulanMap[ym] = {1:{jumlahRilis:0,totalDokumentasi:0},2:{jumlahRilis:0,totalDokumentasi:0},3:{jumlahRilis:0,totalDokumentasi:0},4:{jumlahRilis:0,totalDokumentasi:0}};
+    bulanMap[ym][pekan].jumlahRilis++;
+    bulanMap[ym][pekan].totalDokumentasi += Number(a.jumlahDokumentasi)||0;
   });
-  return Object.values(map)
-    .map(x=>({...x, target: Number(target?.[`p${x.pekan}`])||0}))
-    .sort((a,b)=>b.key.localeCompare(a.key));
+  const rows = [];
+  Object.keys(bulanMap).sort().forEach(ym=>{
+    const bulanLabel = bulanFromTanggal(ym+'-01');
+    for(let p=1;p<=4;p++){
+      const d = bulanMap[ym][p];
+      const t = Number(target?.[`p${p}`])||0;
+      rows.push({ym, bulanLabel, pekan:p, jumlahRilis:d.jumlahRilis, totalDokumentasi:d.totalDokumentasi, target:t, pct:pekanPct(d.jumlahRilis,t)});
+    }
+  });
+  return rows.sort((a,b)=> b.ym.localeCompare(a.ym) || b.pekan-a.pekan);
 }
 function renderAktivitas(m,sp,c){
   const mingguSorted = sp.aktivitasMingguan
@@ -1681,19 +1700,41 @@ function renderAktivitas(m,sp,c){
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
         <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Pekan</div>
         <table style="font-size:12px;">
-          <thead><tr><th>Bulan</th><th>Pekan</th><th style="text-align:right;">Jumlah Rilis</th><th style="text-align:right;">Total Dokumentasi</th><th style="text-align:right;">Target</th><th>Status</th></tr></thead>
+          <thead><tr><th>Bulan</th><th>Pekan</th><th style="text-align:right;">Jumlah Rilis</th><th style="text-align:right;">Total Dokumentasi</th><th style="text-align:right;">Target</th><th>%</th></tr></thead>
           <tbody>
-            ${pekanRekap.map(p=>{
-              const status = p.target>0 ? (p.jumlahRilis>=p.target?'ok':(p.jumlahRilis>0?'warn':'crit')) : null;
+            ${pekanRekap.filter(p=>p.ym>=currentYM).map(p=>{
+              const status = statusFromPct(p.pct);
               return `<tr>
                 <td>${p.bulanLabel}</td>
                 <td>Pekan ${p.pekan}</td>
                 <td style="text-align:right;">${p.jumlahRilis}</td>
                 <td style="text-align:right;">${p.totalDokumentasi}</td>
                 <td style="text-align:right;">${p.target||'—'}</td>
-                <td>${status?`<span class="chip ${statusChipClass[status]}">${p.jumlahRilis}/${p.target}</span>`:'—'}</td>
+                <td>${status?`<span class="chip ${statusChipClass[status]}">${p.pct}%</span>`:'—'}</td>
               </tr>`;
             }).join('')}
+            ${(()=>{
+              // Bulan yang sudah berakhir: 4 pekannya digabung jadi 1 baris, % = rata-rata dari 4 pekan
+              const byYm = {};
+              pekanRekap.filter(p=>p.ym<currentYM).forEach(p=>{
+                if(!byYm[p.ym]) byYm[p.ym] = {bulanLabel:p.bulanLabel, jumlahRilis:0, totalDokumentasi:0, pctList:[]};
+                byYm[p.ym].jumlahRilis += p.jumlahRilis;
+                byYm[p.ym].totalDokumentasi += p.totalDokumentasi;
+                if(p.pct!==null) byYm[p.ym].pctList.push(p.pct);
+              });
+              return Object.entries(byYm).sort((a,b)=>b[0].localeCompare(a[0])).map(([ym,b])=>{
+                const rataPct = b.pctList.length ? Math.round(b.pctList.reduce((s,v)=>s+v,0)/b.pctList.length) : null;
+                const status = statusFromPct(rataPct);
+                return `<tr>
+                  <td>${b.bulanLabel}</td>
+                  <td>Rata-rata 4 Pekan</td>
+                  <td style="text-align:right;">${b.jumlahRilis}</td>
+                  <td style="text-align:right;">${b.totalDokumentasi}</td>
+                  <td style="text-align:right;">—</td>
+                  <td>${status?`<span class="chip ${statusChipClass[status]}">${rataPct}%</span>`:'—'}</td>
+                </tr>`;
+              }).join('');
+            })()}
           </tbody>
         </table>
       </div>` : ''}
