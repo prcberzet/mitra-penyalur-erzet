@@ -699,8 +699,8 @@ let mitraList = [
           {bulan:'Juli 2026', rapbZakat:36000000, rapbInfak:24000000, pencairanZakat:36000000, pencairanInfak:24000000, realisasiZakat:13000000, realisasiInfak:8000000},
         ],
         aktivitasHarian:[
-          {tanggal:'2026-07-27', judul:'Rilis berita pelatihan guru tahap 3', link:'https://drive.google.com/...', status:'ada'},
-          {tanggal:'2026-07-24', judul:'Dokumentasi kunjungan lapangan', link:'https://drive.google.com/...', status:'ada'},
+          {tanggal:'2026-07-27', rilisBerita:'Rilis berita pelatihan guru tahap 3', lokasi:'Bandung', jumlahDokumentasi:6},
+          {tanggal:'2026-07-24', rilisBerita:'Dokumentasi kunjungan lapangan', lokasi:'Bandung', jumlahDokumentasi:4},
         ],
         aktivitasMingguan:[
           {minggu:'Minggu ke-4 Juli 2026', tanggal:'2026-07-25', link:'https://drive.google.com/...', status:'ada'},
@@ -760,7 +760,7 @@ let mitraList = [
           {bulan:'Juli 2026', rapbZakat:21000000, rapbInfak:14000000, pencairanZakat:0, pencairanInfak:0, realisasiZakat:0, realisasiInfak:0},
         ],
         aktivitasHarian:[
-          {tanggal:'2026-07-10', judul:'Dokumentasi penanaman pohon', link:'https://drive.google.com/...', status:'ada'},
+          {tanggal:'2026-07-10', rilisBerita:'Dokumentasi penanaman pohon', lokasi:'Cimahi', jumlahDokumentasi:3},
         ],
         aktivitasMingguan:[
           {minggu:'Minggu ke-2 Juli 2026', tanggal:'2026-07-11', link:'', status:'belum'},
@@ -1570,11 +1570,38 @@ function slaBadge(tanggal){
   const cls = pct===100?'chip-ok':pct===75?'chip-warn':'chip-crit';
   return `<span class="chip ${cls}">${pct}% · ${label}</span>`;
 }
+function bulanFromTanggal(tgl){
+  if(!tgl) return '—';
+  const d = new Date(tgl+'T00:00:00');
+  if(isNaN(d.getTime())) return '—';
+  return `${BULAN_NAMES[d.getMonth()]} ${d.getFullYear()}`;
+}
+function rekapPerKota(list){
+  const map = {};
+  list.forEach(a=>{
+    const kota = a.lokasi || '(Tanpa Lokasi)';
+    if(!map[kota]) map[kota] = {kota, jumlahRilis:0, totalDokumentasi:0};
+    map[kota].jumlahRilis++;
+    map[kota].totalDokumentasi += Number(a.jumlahDokumentasi)||0;
+  });
+  return Object.values(map).sort((a,b)=>b.jumlahRilis-a.jumlahRilis);
+}
+function lokasiDatalistOptions(sp){
+  const uniq = [...new Set(sp.aktivitasHarian.map(a=>a.lokasi).filter(Boolean))];
+  return uniq.map(k=>`<option value="${escAttr(k)}">`).join('');
+}
 function renderAktivitas(m,sp,c){
   const mingguSorted = sp.aktivitasMingguan
     .map((a,i)=>({a,i}))
     .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
+  const harianSorted = sp.aktivitasHarian
+    .map((a,i)=>({a,i}))
+    .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
+  const kotaRekap = rekapPerKota(sp.aktivitasHarian);
+  const totalRilis = sp.aktivitasHarian.length;
+  const totalDok = sp.aktivitasHarian.reduce((s,a)=>s+(Number(a.jumlahDokumentasi)||0),0);
   c.innerHTML = `
+    <datalist id="lokasiOptions">${lokasiDatalistOptions(sp)}</datalist>
     <div class="panel">
       <div class="panel-head">
         <div><h3>Rilis Berita & Dokumentasi (Harian) — ${sp.nama}</h3><p>Aktivitas publikasi harian mitra.</p></div>
@@ -1584,17 +1611,33 @@ function renderAktivitas(m,sp,c){
         </div>
       </div>
       <table>
-        <thead><tr><th>Tanggal</th><th>Judul / Kegiatan</th><th>Berkas</th><th></th></tr></thead>
+        <thead><tr><th>Bulan</th><th>Tanggal</th><th>Rilis Berita</th><th>Lokasi (Kota)</th><th>Jml. Dokumentasi</th><th></th></tr></thead>
         <tbody>
-        ${sp.aktivitasHarian.map((a,i)=>`
+        ${harianSorted.map(({a,i})=>`
           <tr>
+            <td>${bulanFromTanggal(a.tanggal)}</td>
             <td class="mono">${fmtDate(a.tanggal)}</td>
-            <td>${a.judul}</td>
-            <td class="link-cell">${a.link?`<a href="${a.link}" target="_blank">Lihat berkas ↗</a>`:'—'}</td>
-            <td class="row-actions"><button class="icon-btn" onclick="hapusHarian('${m.id}','${sp.id}',${i})">✕</button></td>
-          </tr>`).join('') || `<tr><td colspan="4"><div class="empty-state">Belum ada aktivitas harian tercatat.</div></td></tr>`}
+            <td>${escHtml(a.rilisBerita||a.judul||'')}</td>
+            <td>${escHtml(a.lokasi)||'—'}</td>
+            <td class="mono">${a.jumlahDokumentasi ?? 0}</td>
+            <td class="row-actions">
+              <button class="icon-btn" onclick="openEditHarianModal('${m.id}','${sp.id}',${i})">✎</button>
+              <button class="icon-btn" onclick="hapusHarian('${m.id}','${sp.id}',${i})">✕</button>
+            </td>
+          </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">Belum ada aktivitas harian tercatat.</div></td></tr>`}
         </tbody>
       </table>
+      ${kotaRekap.length ? `
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+        <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Kota</div>
+        <table style="font-size:12px;">
+          <thead><tr><th>Kota</th><th style="text-align:right;">Jumlah Rilis Berita</th><th style="text-align:right;">Total Dokumentasi</th></tr></thead>
+          <tbody>
+            ${kotaRekap.map(k=>`<tr><td>${escHtml(k.kota)}</td><td style="text-align:right;">${k.jumlahRilis}</td><td style="text-align:right;">${k.totalDokumentasi}</td></tr>`).join('')}
+            <tr style="font-weight:600; border-top:1px solid var(--line);"><td>Total</td><td style="text-align:right;">${totalRilis}</td><td style="text-align:right;">${totalDok}</td></tr>
+          </tbody>
+        </table>
+      </div>` : ''}
     </div>
     <div class="panel">
       <div class="panel-head">
@@ -1624,17 +1667,50 @@ function openHarianModal(mid,spId){
   openModal(`
     <h3>Tambah Aktivitas Harian</h3>
     <div class="field"><label>Tanggal</label><input id="f_htgl" type="date"></div>
-    <div class="field"><label>Judul / Kegiatan</label><input id="f_hjudul" placeholder="Contoh: Rilis berita ..."></div>
-    <div class="field"><label>Tautan Google Drive</label><input id="f_hlink" placeholder="https://drive.google.com/..."></div>
+    <div class="field"><label>Rilis Berita</label><input id="f_hrilis" placeholder="Contoh: Rilis berita pelatihan guru tahap 3"></div>
+    <div class="field"><label>Lokasi (Kota)</label><input id="f_hlokasi" list="lokasiOptions" placeholder="Contoh: Bandung"></div>
+    <div class="field"><label>Jumlah Dokumentasi</label><input id="f_hdok" type="number" min="0" placeholder="0"></div>
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanHarian('${mid}','${spId}')">Simpan</button></div>
   `);
 }
 function simpanHarian(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const judul = document.getElementById('f_hjudul').value.trim();
-  if(!judul) return;
-  sp.aktivitasHarian.unshift({tanggal:document.getElementById('f_htgl').value||new Date().toISOString().slice(0,10), judul, link:document.getElementById('f_hlink').value, status:'ada'});
+  const rilisBerita = document.getElementById('f_hrilis').value.trim();
+  if(!rilisBerita) return;
+  sp.aktivitasHarian.unshift({
+    tanggal: document.getElementById('f_htgl').value || new Date().toISOString().slice(0,10),
+    rilisBerita,
+    lokasi: document.getElementById('f_hlokasi').value.trim(),
+    jumlahDokumentasi: parseInt(document.getElementById('f_hdok').value)||0,
+  });
+  persistMitra(m);
+  closeModal(); renderAll();
+}
+function openEditHarianModal(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const a = sp.aktivitasHarian[idx];
+  openModal(`
+    <h3>Edit Aktivitas Harian</h3>
+    <div class="field"><label>Tanggal</label><input id="f_ehtgl" type="date" value="${a.tanggal||''}"></div>
+    <div class="field"><label>Rilis Berita</label><input id="f_ehrilis" value="${escAttr(a.rilisBerita||a.judul)}"></div>
+    <div class="field"><label>Lokasi (Kota)</label><input id="f_ehlokasi" list="lokasiOptions" value="${escAttr(a.lokasi)}"></div>
+    <div class="field"><label>Jumlah Dokumentasi</label><input id="f_ehdok" type="number" min="0" value="${a.jumlahDokumentasi ?? 0}"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditHarian('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+  `);
+}
+function simpanEditHarian(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const a = sp.aktivitasHarian[idx];
+  const rilisBerita = document.getElementById('f_ehrilis').value.trim();
+  if(!rilisBerita) return;
+  a.tanggal = document.getElementById('f_ehtgl').value || a.tanggal;
+  a.rilisBerita = rilisBerita;
+  delete a.judul; delete a.link; delete a.status; // beralih penuh ke skema baru
+  a.lokasi = document.getElementById('f_ehlokasi').value.trim();
+  a.jumlahDokumentasi = parseInt(document.getElementById('f_ehdok').value)||0;
   persistMitra(m);
   closeModal(); renderAll();
 }
@@ -2886,7 +2962,10 @@ function parseTelegramChat(raw){
             let text = x.text;
             if(Array.isArray(text)) text = text.map(t=>typeof t==='string'?t:(t.text||'')).join('');
             const d = new Date(x.date);
-            return { sender:String(x.from), date:isNaN(d.getTime())?null:d, text:String(text||'').trim() };
+            // photo/video hadir di export JSON resmi Telegram Desktop -> dipakai untuk
+            // menghitung "Jumlah Dokumentasi" otomatis (tidak tersedia di format teks paste biasa)
+            const foto = (x.photo || x.file || x.media_type==='video_file') ? 1 : 0;
+            return { sender:String(x.from), date:isNaN(d.getTime())?null:d, text:String(text||'').trim(), foto };
           });
         if(messages.length) return {messages, format:'json'};
       }
@@ -2966,37 +3045,60 @@ function prosesRekapRilisStep1(mid,spId){
     <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="prosesRekapRilisStep2()">Lanjut: Preview Entri</button></div>
   `);
 }
-function extractLinkFromText(text){
-  const m = (text||'').match(/https?:\/\/[^\s]+/i);
-  return m ? m[0].replace(/[.,)\]]+$/,'') : '';
+/* Mengelompokkan pesan admin yang berdekatan waktunya (<=3 menit) jadi SATU entri
+   rilis berita — ini menangani kasus umum: 1 rilis berita dikirim sebagai beberapa
+   foto sekaligus (album) atau foto+teks caption terpisah. Jumlah foto di dalam
+   grup dijumlahkan jadi "Jumlah Dokumentasi" otomatis (hanya akurat untuk file
+   export JSON resmi — format teks hasil paste tidak membawa info lampiran foto). */
+const GROUP_WINDOW_MS = 3*60*1000;
+function groupAdminMessages(messages){
+  const groups = [];
+  let current = null;
+  messages.forEach(msg=>{
+    if(current && msg.date && current.lastDate && (msg.date - current.lastDate) <= GROUP_WINDOW_MS){
+      current.teks.push(msg.text);
+      current.foto += (msg.foto||0);
+      current.lastDate = msg.date;
+    } else {
+      if(current) groups.push(current);
+      current = { tanggal: msg.date, lastDate: msg.date, teks: [msg.text], foto: (msg.foto||0) };
+    }
+  });
+  if(current) groups.push(current);
+  return groups;
 }
 function prosesRekapRilisStep2(){
   const admin = document.getElementById('f_rtadmin').value;
-  const candidates = telegramImportState.messages
-    .filter(x=>x.sender===admin)
-    .map(x=>{
-      const firstLine = (x.text||'').split('\n').map(s=>s.trim()).filter(Boolean)[0] || '(tanpa teks)';
-      return {
-        tanggal: x.date ? x.date.toISOString().slice(0,10) : '',
-        judul: firstLine.length>140 ? firstLine.slice(0,140)+'…' : firstLine,
-        link: extractLinkFromText(x.text),
-      };
-    });
+  const adminMsgs = telegramImportState.messages.filter(x=>x.sender===admin);
+  const groups = groupAdminMessages(adminMsgs);
+  const candidates = groups.map(g=>{
+    const teksGabungan = g.teks.map(t=>(t||'').trim()).filter(Boolean).join(' ');
+    const firstLine = teksGabungan.split('\n').map(s=>s.trim()).filter(Boolean)[0] || '(tanpa teks)';
+    return {
+      tanggal: g.tanggal ? g.tanggal.toISOString().slice(0,10) : '',
+      rilisBerita: firstLine.length>140 ? firstLine.slice(0,140)+'…' : firstLine,
+      lokasi: '',
+      jumlahDokumentasi: g.foto,
+    };
+  });
   telegramImportState.candidates = candidates;
+  const adaFotoTerdeteksi = telegramImportState.format==='json';
   openModalWide(`
     <h3>Preview Impor ke Aktivitas Harian</h3>
-    <p style="font-size:12px; color:var(--ink-soft); margin:-6px 0 4px;">${candidates.length} pesan dari <strong>${escHtml(admin)}</strong> terdeteksi. Centang yang mau dimasukkan ke tabel Rilis Berita & Dokumentasi (Harian) — judul & link bisa diedit dulu sebelum diimpor.</p>
+    <p style="font-size:12px; color:var(--ink-soft); margin:-6px 0 4px;">${candidates.length} entri dari <strong>${escHtml(admin)}</strong> terdeteksi (pesan berdekatan waktu digabung jadi 1 entri). Lengkapi Lokasi, lalu centang yang mau dimasukkan ke tabel Rilis Berita & Dokumentasi (Harian).</p>
+    ${!adaFotoTerdeteksi?'<div style="font-size:11.5px; color:var(--warn); margin-bottom:8px;">⚠️ Chat berasal dari format teks (paste), bukan file export resmi — jumlah dokumentasi tidak bisa dihitung otomatis dari foto, isi manual di kolom di bawah.</div>':''}
     <div style="max-height:360px; overflow-y:auto;">
     <table style="width:100%; font-size:12px;">
-      <thead><tr><th style="width:24px;"></th><th style="width:100px;">Tanggal</th><th>Judul / Kegiatan</th><th style="width:180px;">Link</th></tr></thead>
+      <thead><tr><th style="width:24px;"></th><th style="width:100px;">Tanggal</th><th>Rilis Berita</th><th style="width:140px;">Lokasi (Kota)</th><th style="width:70px;">Jml. Dok.</th></tr></thead>
       <tbody>
         ${candidates.map((c,i)=>`
           <tr>
             <td><input type="checkbox" id="f_rtsel${i}" checked></td>
             <td><input type="date" id="f_rttgl${i}" value="${c.tanggal}" style="width:100%;"></td>
-            <td><input type="text" id="f_rtjudul${i}" value="${escAttr(c.judul)}" style="width:100%;"></td>
-            <td><input type="text" id="f_rtlink${i}" value="${escAttr(c.link)}" style="width:100%;" placeholder="https://..."></td>
-          </tr>`).join('') || `<tr><td colspan="4"><div class="empty-state">Tidak ada pesan dari pengirim ini.</div></td></tr>`}
+            <td><input type="text" id="f_rtrilis${i}" value="${escAttr(c.rilisBerita)}" style="width:100%;"></td>
+            <td><input type="text" id="f_rtlokasi${i}" list="lokasiOptions" value="${escAttr(c.lokasi)}" style="width:100%;" placeholder="Kota"></td>
+            <td><input type="number" min="0" id="f_rtdok${i}" value="${c.jumlahDokumentasi}" style="width:100%;"></td>
+          </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">Tidak ada pesan dari pengirim ini.</div></td></tr>`}
       </tbody>
     </table>
     </div>
@@ -3007,16 +3109,15 @@ function importRekapRilis(){
   const {mid, spId, candidates} = telegramImportState;
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  let jumlah = 0;
   candidates.forEach((c,i)=>{
     const checked = document.getElementById(`f_rtsel${i}`).checked;
     if(!checked) return;
     const tanggal = document.getElementById(`f_rttgl${i}`).value || new Date().toISOString().slice(0,10);
-    const judul = document.getElementById(`f_rtjudul${i}`).value.trim();
-    const link = document.getElementById(`f_rtlink${i}`).value.trim();
-    if(!judul) return;
-    sp.aktivitasHarian.unshift({tanggal, judul, link, status:'ada'});
-    jumlah++;
+    const rilisBerita = document.getElementById(`f_rtrilis${i}`).value.trim();
+    const lokasi = document.getElementById(`f_rtlokasi${i}`).value.trim();
+    const jumlahDokumentasi = parseInt(document.getElementById(`f_rtdok${i}`).value)||0;
+    if(!rilisBerita) return;
+    sp.aktivitasHarian.unshift({tanggal, rilisBerita, lokasi, jumlahDokumentasi});
   });
   telegramImportState = null;
   persistMitra(m);
