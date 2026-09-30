@@ -913,6 +913,7 @@ function normalizeMitra(m){
       };
     });
     sp.evaluasi = sp.evaluasi || {raport:[],jadwal:[],catatan:[]};
+    sp.evaluasi.telegramRekap = sp.evaluasi.telegramRekap || [];
     sp.evaluasi.raport = (sp.evaluasi.raport||[]).map(r=>{
       if(r.kuartal) return r; // sudah format kuartal baru
       return {
@@ -2146,6 +2147,22 @@ function renderEvaluasi(m,sp,c){
             <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
           </div>
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
+    </div>
+    <div class="panel">
+      <div class="panel-head">
+        <div><h3>Rekap Diskusi Telegram</h3><p>Rekap statistik dari chat grup yang di-export/forward salah satu member — tanpa AI, murni dihitung di browser.</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openTelegramRekapModal('${m.id}','${sp.id}')">+ Rekap Diskusi</button>
+      </div>
+      ${(sp.evaluasi.telegramRekap||[]).map((s,i)=>`
+        <div class="legalitas-item" style="cursor:pointer" onclick="lihatTelegramRekap('${m.id}','${sp.id}',${i})">
+          <div class="legalitas-left">
+            <div class="name">${escHtml(s.label)}</div>
+            <div class="date">${s.totalPesan} pesan · ${s.totalPeserta} peserta · dibuat ${fmtDate((s.dibuatPada||'').slice(0,10))}</div>
+          </div>
+          <div style="display:flex; gap:4px;" onclick="event.stopPropagation();">
+            <button class="icon-btn" onclick="hapusTelegramRekap('${m.id}','${sp.id}',${i})">✕</button>
+          </div>
+        </div>`).join('') || `<div class="empty-state"><span class="glyph">💬</span>Belum ada rekap diskusi Telegram.</div>`}
     </div>`;
 }
 /* ------------------------- PENGATURAN PEJABAT ---------------------------
@@ -2860,6 +2877,172 @@ function unduhNotulensi(mid,spId,idx){
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
   setTimeout(()=>URL.revokeObjectURL(url), 2000);
+}
+
+/* ------------------------ REKAP DISKUSI TELEGRAM -------------------------
+   Murni statistik (jumlah pesan per peserta, jam/hari paling ramai, kata yang
+   paling sering muncul) — dihitung sepenuhnya di browser, TANPA AI dan TANPA
+   API key, supaya aman dipakai di aplikasi publik ini. Mendukung 2 bentuk input:
+   1) File export resmi Telegram Desktop (result.json)
+   2) Teks hasil forward/copy-paste chat (format umum: "Nama, [DD/MM/YYYY, HH:MM]")
+   Hanya HASIL STATISTIKNYA yang disimpan ke Firestore — teks chat mentahnya
+   dibuang setelah diproses (tidak pernah tersimpan/terkirim ke mana pun). */
+const STOPWORDS_ID = new Set(['yang','dan','di','ke','dari','untuk','ini','itu','dengan','akan','ada','tidak','saya','kita','kami','kamu','anda','atau','juga','sudah','belum','masih','karena','jika','saat','oleh','pada','dalam','adalah','bisa','dapat','harus','mau','iya','nah','aja','saja','deh','sih','dong','kah','lah','pun','nya','apa','siapa','kapan','dimana','gimana','bagaimana','begitu','gitu','jadi','kalau','kalo','terus','lagi','banget','udah','gak','nggak','enggak','tapi','tuh','oke','iya','yaitu','sebagai','tersebut','dapat','yaitu','antara','setelah','sebelum','tentang','seperti','bahwa','sehingga','maka','serta','kepada','terhadap','ketika','sampai','hanya','semua','beberapa','sangat','lebih','paling','tetap','sekali','kembali','tersebut']);
+function parseTelegramChat(raw){
+  raw = (raw||'').trim();
+  if(!raw) return {messages:[], format:'kosong'};
+  if(raw[0]==='{'){
+    try{
+      const data = JSON.parse(raw);
+      if(Array.isArray(data.messages)){
+        const messages = data.messages
+          .filter(x=>x.type==='message' && x.from)
+          .map(x=>{
+            let text = x.text;
+            if(Array.isArray(text)) text = text.map(t=>typeof t==='string'?t:(t.text||'')).join('');
+            const d = new Date(x.date);
+            return { sender:String(x.from), date:isNaN(d.getTime())?null:d, text:String(text||'').trim() };
+          });
+        if(messages.length) return {messages, format:'json'};
+      }
+    }catch(e){ /* bukan JSON valid, lanjut coba format teks */ }
+  }
+  const headerRe = /^(.{1,60}?),\s*\[?(\d{1,2}[./]\d{1,2}[./]\d{2,4}),?\s+(\d{1,2}[:.]\d{2}(?:[:.]\d{2})?)\]?\s*$/;
+  const lines = raw.split(/\r?\n/);
+  const messages = [];
+  let current = null;
+  for(const line of lines){
+    const mHead = line.match(headerRe);
+    if(mHead){
+      if(current) messages.push(current);
+      const [,sender,tgl,jam] = mHead;
+      current = { sender:sender.trim(), date:parseTanggalFleksibel(tgl,jam), text:'' };
+    } else if(current){
+      current.text += (current.text?'\n':'') + line;
+    }
+  }
+  if(current) messages.push(current);
+  const valid = messages.filter(x=>x.date && !isNaN(x.date.getTime()) && x.text.trim());
+  if(valid.length) return {messages:valid, format:'teks'};
+  const generic = lines.filter(l=>l.trim()).map(l=>({sender:'(tidak diketahui)', date:null, text:l.trim()}));
+  return {messages:generic, format:'tidak-dikenali'};
+}
+function parseTanggalFleksibel(tgl,jam){
+  const sep = tgl.includes('.') ? '.' : '/';
+  let [day,month,year] = tgl.split(sep).map(Number);
+  if(year<100) year += 2000;
+  const jamParts = jam.replace('.',':').split(':').map(Number);
+  const d = new Date(year, (month||1)-1, day||1, jamParts[0]||0, jamParts[1]||0, jamParts[2]||0);
+  return isNaN(d.getTime()) ? null : d;
+}
+function computeTelegramStats(messages){
+  const withDate = messages.filter(m=>m.date);
+  const perSender = {};
+  messages.forEach(m=>{ perSender[m.sender] = (perSender[m.sender]||0)+1; });
+  const perPeserta = Object.entries(perSender).map(([nama,jumlah])=>({nama,jumlah})).sort((a,b)=>b.jumlah-a.jumlah);
+  const jamCount = new Array(24).fill(0);
+  withDate.forEach(m=>{ jamCount[m.date.getHours()]++; });
+  let jamRamai = null;
+  if(withDate.length){ let maxI=0; jamCount.forEach((v,i)=>{ if(v>jamCount[maxI]) maxI=i; }); if(jamCount[maxI]>0) jamRamai = maxI; }
+  const hariNames = ['Minggu','Senin','Selasa','Rabu','Kamis','Jumat','Sabtu'];
+  const hariCount = new Array(7).fill(0);
+  withDate.forEach(m=>{ hariCount[m.date.getDay()]++; });
+  let hariRamai = null;
+  if(withDate.length){ let maxI=0; hariCount.forEach((v,i)=>{ if(v>hariCount[maxI]) maxI=i; }); if(hariCount[maxI]>0) hariRamai = hariNames[maxI]; }
+  let dari=null, sampai=null;
+  withDate.forEach(m=>{ if(!dari||m.date<dari) dari=m.date; if(!sampai||m.date>sampai) sampai=m.date; });
+  const wordCount = {};
+  messages.forEach(m=>{
+    (m.text||'').toLowerCase().replace(/[^a-z0-9\u00C0-\u024F\s]/g,' ').split(/\s+/).forEach(w=>{
+      w = w.trim();
+      if(w.length<4 || STOPWORDS_ID.has(w) || /^\d+$/.test(w)) return;
+      wordCount[w] = (wordCount[w]||0)+1;
+    });
+  });
+  const topKata = Object.entries(wordCount).map(([kata,jumlah])=>({kata,jumlah})).sort((a,b)=>b.jumlah-a.jumlah).slice(0,10);
+  const totalKata = messages.reduce((sum,m)=>sum+(m.text||'').split(/\s+/).filter(Boolean).length,0);
+  const rataKata = messages.length ? Math.round(totalKata/messages.length*10)/10 : 0;
+  return {
+    totalPesan: messages.length,
+    totalPeserta: perPeserta.length,
+    perPeserta, jamRamai, hariRamai,
+    dari: dari?dari.toISOString():null, sampai: sampai?sampai.toISOString():null,
+    topKata, rataKata,
+  };
+}
+function openTelegramRekapModal(mid,spId){
+  openModal(`
+    <h3>Rekap Diskusi Telegram</h3>
+    <div class="field"><label>Label / Periode</label><input id="f_trlabel" placeholder="Contoh: Rekap Diskusi Agustus 2026"></div>
+    <div class="field"><label>Upload file export Telegram (.json / .txt) — opsional</label><input id="f_trfile" type="file" accept=".json,.txt" onchange="bacaFileTelegram(this)"></div>
+    <div class="field"><label>Atau tempel (paste) hasil forward/copy chat di sini</label><textarea id="f_trraw" style="min-height:160px;" placeholder="Tempel isi chat Telegram yang di-export/forward member di sini..."></textarea></div>
+    <div id="trWarning" style="font-size:11.5px; color:var(--warn); margin:-4px 0 8px;"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="prosesTelegramRekap('${mid}','${spId}')">Proses & Simpan</button></div>
+  `);
+}
+function bacaFileTelegram(input){
+  const file = input.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => { document.getElementById('f_trraw').value = e.target.result; };
+  reader.readAsText(file);
+}
+function prosesTelegramRekap(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const label = document.getElementById('f_trlabel').value.trim() || 'Rekap Diskusi Telegram';
+  const raw = document.getElementById('f_trraw').value;
+  const {messages, format} = parseTelegramChat(raw);
+  if(!messages.length){
+    document.getElementById('trWarning').textContent = 'Tidak ada pesan yang terbaca. Pastikan sudah menempel teks atau meng-upload file export-nya.';
+    return;
+  }
+  const stats = computeTelegramStats(messages);
+  stats.label = label;
+  stats.dibuatPada = new Date().toISOString();
+  stats.formatTerdeteksi = format;
+  sp.evaluasi.telegramRekap = sp.evaluasi.telegramRekap || [];
+  sp.evaluasi.telegramRekap.push(stats);
+  const newIdx = sp.evaluasi.telegramRekap.length-1;
+  persistMitra(m);
+  closeModal();
+  renderAll();
+  lihatTelegramRekap(mid,spId,newIdx);
+}
+function hapusTelegramRekap(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.evaluasi.telegramRekap.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+}
+function lihatTelegramRekap(mid,spId,idx){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const s = sp.evaluasi.telegramRekap[idx];
+  const rentang = (s.dari&&s.sampai) ? `${fmtDate(s.dari.slice(0,10))} — ${fmtDate(s.sampai.slice(0,10))}` : '—';
+  const jamRamaiStr = s.jamRamai!==null ? `Jam ${String(s.jamRamai).padStart(2,'0')}.00 – ${String((s.jamRamai+1)%24).padStart(2,'0')}.00` : '—';
+  openModal(`
+    <h3>${escHtml(s.label)}</h3>
+    <div class="field"><label>Rentang Waktu</label><div>${rentang}</div></div>
+    <div class="field"><label>Total Pesan</label><div>${s.totalPesan} pesan dari ${s.totalPeserta} peserta</div></div>
+    <div class="field"><label>Jam Paling Ramai</label><div>${jamRamaiStr}</div></div>
+    <div class="field"><label>Hari Paling Ramai</label><div>${s.hariRamai||'—'}</div></div>
+    <div class="field"><label>Rata-rata Panjang Pesan</label><div>${s.rataKata} kata/pesan</div></div>
+    <div class="field"><label>Peserta Paling Aktif</label>
+      <table style="width:100%; font-size:12px;">
+        <thead><tr><th style="text-align:left;">Nama</th><th style="text-align:right;">Jumlah Pesan</th></tr></thead>
+        <tbody>${s.perPeserta.slice(0,10).map(p=>`<tr><td>${escHtml(p.nama)}</td><td style="text-align:right;">${p.jumlah}</td></tr>`).join('')}</tbody>
+      </table>
+    </div>
+    <div class="field"><label>Kata Paling Sering Muncul</label>
+      <div style="display:flex; flex-wrap:wrap; gap:6px;">
+        ${s.topKata.map(k=>`<span class="chip">${escHtml(k.kata)} (${k.jumlah})</span>`).join('') || '<span style="color:var(--ink-faint)">—</span>'}
+      </div>
+    </div>
+    ${s.formatTerdeteksi==='tidak-dikenali'?'<div style="font-size:11.5px; color:var(--warn); margin-bottom:8px;">⚠️ Format chat tidak sepenuhnya dikenali — pengirim & waktu tiap pesan mungkin tidak akurat, hanya jumlah baris yang dihitung.</div>':''}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Tutup</button><button class="btn btn-danger-ghost" onclick="hapusTelegramRekap('${mid}','${spId}',${idx}); closeModal();">Hapus</button></div>
+  `);
 }
 
 /* --------------------------- OVERVIEW (ALL MITRA) ----------------------- */
