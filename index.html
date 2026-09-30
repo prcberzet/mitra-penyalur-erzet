@@ -896,6 +896,7 @@ function normalizeMitra(m){
   m.subProgram.forEach(sp=>{
     sp.dana = sp.dana || [];
     sp.aktivitasHarian = sp.aktivitasHarian || [];
+    sp.targetRilisPekanan = sp.targetRilisPekanan || {p1:0,p2:0,p3:0,p4:0};
     sp.aktivitasMingguan = sp.aktivitasMingguan || [];
     sp.laporanBulanan = (sp.laporanBulanan || []).map(l=>{
       const wrapLink = v => (v && typeof v==='object') ? {link:v.link||''} : {link:''};
@@ -1590,6 +1591,33 @@ function lokasiDatalistOptions(sp){
   const uniq = [...new Set(sp.aktivitasHarian.map(a=>a.lokasi).filter(Boolean))];
   return uniq.map(k=>`<option value="${escAttr(k)}">`).join('');
 }
+/* Pekan ke-N dalam bulan, berbasis tanggal (bukan pekan kalender ISO):
+   Pekan 1 = tgl 1-7, Pekan 2 = 8-14, Pekan 3 = 15-21, Pekan 4 = 22-akhir bulan.
+   Konsisten dipakai untuk rekap mingguan & target rilis pekanan. */
+function pekanFromTanggal(tgl){
+  if(!tgl) return null;
+  const day = Number(tgl.split('-')[2]);
+  if(!day) return null;
+  if(day<=7) return 1;
+  if(day<=14) return 2;
+  if(day<=21) return 3;
+  return 4;
+}
+function rekapPerPekan(list, target){
+  const map = {};
+  list.forEach(a=>{
+    const pekan = pekanFromTanggal(a.tanggal);
+    if(!pekan) return;
+    const bulanLabel = bulanFromTanggal(a.tanggal);
+    const key = `${a.tanggal.slice(0,7)}-P${pekan}`;
+    if(!map[key]) map[key] = {key, bulanLabel, pekan, jumlahRilis:0, totalDokumentasi:0};
+    map[key].jumlahRilis++;
+    map[key].totalDokumentasi += Number(a.jumlahDokumentasi)||0;
+  });
+  return Object.values(map)
+    .map(x=>({...x, target: Number(target?.[`p${x.pekan}`])||0}))
+    .sort((a,b)=>b.key.localeCompare(a.key));
+}
 function renderAktivitas(m,sp,c){
   const mingguSorted = sp.aktivitasMingguan
     .map((a,i)=>({a,i}))
@@ -1598,6 +1626,7 @@ function renderAktivitas(m,sp,c){
     .map((a,i)=>({a,i}))
     .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
   const kotaRekap = rekapPerKota(sp.aktivitasHarian);
+  const pekanRekap = rekapPerPekan(sp.aktivitasHarian, sp.targetRilisPekanan);
   const totalRilis = sp.aktivitasHarian.length;
   const totalDok = sp.aktivitasHarian.reduce((s,a)=>s+(Number(a.jumlahDokumentasi)||0),0);
   c.innerHTML = `
@@ -1606,6 +1635,7 @@ function renderAktivitas(m,sp,c){
       <div class="panel-head">
         <div><h3>Rilis Berita & Dokumentasi (Harian) — ${sp.nama}</h3><p>Aktivitas publikasi harian mitra.</p></div>
         <div style="display:flex; gap:8px;">
+          <button class="btn btn-sm" onclick="openTargetPekananModal('${m.id}','${sp.id}')" title="Atur target rilis per pekan">🎯 Target Pekanan</button>
           <button class="btn btn-sm" onclick="openRekapRilisModal('${m.id}','${sp.id}')" title="Rekap otomatis dari chat grup Telegram">📥 Rekap dari Telegram</button>
           <button class="btn btn-primary btn-sm" onclick="openHarianModal('${m.id}','${sp.id}')">+ Tambah Entri</button>
         </div>
@@ -1627,6 +1657,26 @@ function renderAktivitas(m,sp,c){
           </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">Belum ada aktivitas harian tercatat.</div></td></tr>`}
         </tbody>
       </table>
+      ${pekanRekap.length ? `
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+        <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Pekan</div>
+        <table style="font-size:12px;">
+          <thead><tr><th>Bulan</th><th>Pekan</th><th style="text-align:right;">Jumlah Rilis</th><th style="text-align:right;">Total Dokumentasi</th><th style="text-align:right;">Target</th><th>Status</th></tr></thead>
+          <tbody>
+            ${pekanRekap.map(p=>{
+              const status = p.target>0 ? (p.jumlahRilis>=p.target?'ok':(p.jumlahRilis>0?'warn':'crit')) : null;
+              return `<tr>
+                <td>${p.bulanLabel}</td>
+                <td>Pekan ${p.pekan}</td>
+                <td style="text-align:right;">${p.jumlahRilis}</td>
+                <td style="text-align:right;">${p.totalDokumentasi}</td>
+                <td style="text-align:right;">${p.target||'—'}</td>
+                <td>${status?`<span class="chip ${statusChipClass[status]}">${p.jumlahRilis}/${p.target}</span>`:'—'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
       ${kotaRekap.length ? `
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
         <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Kota</div>
@@ -1662,6 +1712,32 @@ function renderAktivitas(m,sp,c){
         </tbody>
       </table>
     </div>`;
+}
+function openTargetPekananModal(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const t = sp.targetRilisPekanan || {p1:0,p2:0,p3:0,p4:0};
+  openModal(`
+    <h3>Target Rilis Pekanan</h3>
+    <p style="font-size:12px; color:var(--ink-soft); margin-top:-6px;">Jumlah target rilis berita per pekan, berlaku setiap bulan (Pekan 1 = tgl 1-7, Pekan 2 = 8-14, Pekan 3 = 15-21, Pekan 4 = 22-akhir bulan).</p>
+    <div class="field"><label>Pekan 1</label><input id="f_tp1" type="number" min="0" value="${t.p1||0}"></div>
+    <div class="field"><label>Pekan 2</label><input id="f_tp2" type="number" min="0" value="${t.p2||0}"></div>
+    <div class="field"><label>Pekan 3</label><input id="f_tp3" type="number" min="0" value="${t.p3||0}"></div>
+    <div class="field"><label>Pekan 4</label><input id="f_tp4" type="number" min="0" value="${t.p4||0}"></div>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanTargetPekanan('${mid}','${spId}')">Simpan</button></div>
+  `);
+}
+function simpanTargetPekanan(mid,spId){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.targetRilisPekanan = {
+    p1: parseInt(document.getElementById('f_tp1').value)||0,
+    p2: parseInt(document.getElementById('f_tp2').value)||0,
+    p3: parseInt(document.getElementById('f_tp3').value)||0,
+    p4: parseInt(document.getElementById('f_tp4').value)||0,
+  };
+  persistMitra(m);
+  closeModal(); renderAll();
 }
 function openHarianModal(mid,spId){
   openModal(`
@@ -3067,17 +3143,32 @@ function groupAdminMessages(messages){
   if(current) groups.push(current);
   return groups;
 }
+/* Kota tidak selalu ditulis terpisah oleh admin — sering "tersembunyi" di dalam
+   kalimat rilis beritanya (mis. "...distribusi di Kota Bandung..."). Dicocokkan
+   ke daftar kota yang SUDAH PERNAH dipakai di sub program ini (bukan daftar kota
+   Indonesia baku), supaya konsisten dengan ejaan/penulisan yang biasa dipakai tim. */
+function detectLokasiFromText(text, knownCities){
+  if(!text) return '';
+  const lower = text.toLowerCase();
+  for(const kota of knownCities){
+    if(kota && lower.includes(kota.toLowerCase())) return kota;
+  }
+  return '';
+}
 function prosesRekapRilisStep2(){
   const admin = document.getElementById('f_rtadmin').value;
   const adminMsgs = telegramImportState.messages.filter(x=>x.sender===admin);
   const groups = groupAdminMessages(adminMsgs);
+  const mForKnown = mitraList.find(x=>x.id===telegramImportState.mid);
+  const spForKnown = mForKnown.subProgram.find(p=>p.id===telegramImportState.spId);
+  const knownCities = [...new Set(spForKnown.aktivitasHarian.map(a=>a.lokasi).filter(Boolean))];
   const candidates = groups.map(g=>{
     const teksGabungan = g.teks.map(t=>(t||'').trim()).filter(Boolean).join(' ');
     const firstLine = teksGabungan.split('\n').map(s=>s.trim()).filter(Boolean)[0] || '(tanpa teks)';
     return {
       tanggal: g.tanggal ? g.tanggal.toISOString().slice(0,10) : '',
       rilisBerita: firstLine.length>140 ? firstLine.slice(0,140)+'…' : firstLine,
-      lokasi: '',
+      lokasi: detectLokasiFromText(teksGabungan, knownCities),
       jumlahDokumentasi: g.foto,
     };
   });
@@ -3085,7 +3176,8 @@ function prosesRekapRilisStep2(){
   const adaFotoTerdeteksi = telegramImportState.format==='json';
   openModalWide(`
     <h3>Preview Impor ke Aktivitas Harian</h3>
-    <p style="font-size:12px; color:var(--ink-soft); margin:-6px 0 4px;">${candidates.length} entri dari <strong>${escHtml(admin)}</strong> terdeteksi (pesan berdekatan waktu digabung jadi 1 entri). Lengkapi Lokasi, lalu centang yang mau dimasukkan ke tabel Rilis Berita & Dokumentasi (Harian).</p>
+    <p style="font-size:12px; color:var(--ink-soft); margin:-6px 0 4px;">${candidates.length} entri dari <strong>${escHtml(admin)}</strong> terdeteksi (pesan berdekatan waktu digabung jadi 1 entri). Lokasi sudah dicoba dideteksi otomatis dari isi rilis beritanya (dicocokkan ke kota yang pernah dipakai di sub program ini) — periksa/lengkapi dulu sebelum diimpor.</p>
+    ${knownCities.length===0?'<div style="font-size:11.5px; color:var(--warn); margin-bottom:8px;">⚠️ Belum ada riwayat Lokasi (Kota) di sub program ini, jadi deteksi otomatis belum bisa jalan — isi manual dulu untuk kali ini; impor berikutnya akan otomatis mengenali kota yang sama.</div>':''}
     ${!adaFotoTerdeteksi?'<div style="font-size:11.5px; color:var(--warn); margin-bottom:8px;">⚠️ Chat berasal dari format teks (paste), bukan file export resmi — jumlah dokumentasi tidak bisa dihitung otomatis dari foto, isi manual di kolom di bawah.</div>':''}
     <div style="max-height:360px; overflow-y:auto;">
     <table style="width:100%; font-size:12px;">
