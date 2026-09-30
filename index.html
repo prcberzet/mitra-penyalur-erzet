@@ -1603,6 +1603,20 @@ function pekanFromTanggal(tgl){
   if(day<=21) return 3;
   return 4;
 }
+function rekapPerBulan(list){
+  const map = {};
+  list.forEach(a=>{
+    if(!a.tanggal) return;
+    const ym = a.tanggal.slice(0,7);
+    if(!map[ym]) map[ym] = {ym, bulanLabel:bulanFromTanggal(a.tanggal), jumlahRilis:0, kotaSet:new Set(), totalDokumentasi:0};
+    map[ym].jumlahRilis++;
+    if(a.lokasi) map[ym].kotaSet.add(a.lokasi);
+    map[ym].totalDokumentasi += Number(a.jumlahDokumentasi)||0;
+  });
+  return Object.values(map)
+    .map(x=>({ym:x.ym, bulanLabel:x.bulanLabel, jumlahRilis:x.jumlahRilis, jumlahKota:x.kotaSet.size, totalDokumentasi:x.totalDokumentasi}))
+    .sort((a,b)=>b.ym.localeCompare(a.ym));
+}
 function rekapPerPekan(list, target){
   const map = {};
   list.forEach(a=>{
@@ -1622,9 +1636,12 @@ function renderAktivitas(m,sp,c){
   const mingguSorted = sp.aktivitasMingguan
     .map((a,i)=>({a,i}))
     .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
+  const currentYM = new Date().toISOString().slice(0,7);
   const harianSorted = sp.aktivitasHarian
     .map((a,i)=>({a,i}))
     .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
+  const harianBerjalan = harianSorted.filter(({a})=>(a.tanggal||'').slice(0,7) >= currentYM);
+  const bulanLalu = rekapPerBulan(sp.aktivitasHarian).filter(x=>x.ym < currentYM);
   const kotaRekap = rekapPerKota(sp.aktivitasHarian);
   const pekanRekap = rekapPerPekan(sp.aktivitasHarian, sp.targetRilisPekanan);
   const totalRilis = sp.aktivitasHarian.length;
@@ -1633,7 +1650,7 @@ function renderAktivitas(m,sp,c){
     <datalist id="lokasiOptions">${lokasiDatalistOptions(sp)}</datalist>
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Rilis Berita & Dokumentasi (Harian) — ${sp.nama}</h3><p>Aktivitas publikasi harian mitra.</p></div>
+        <div><h3>Rilis Berita & Dokumentasi (Harian) — ${sp.nama}</h3><p>Bulan berjalan (${bulanFromTanggal(currentYM+'-01')}) ditampilkan harian; bulan yang sudah berakhir dipadatkan jadi rekap di bawahnya.</p></div>
         <div style="display:flex; gap:8px;">
           <button class="btn btn-sm" onclick="openTargetPekananModal('${m.id}','${sp.id}')" title="Atur target rilis per pekan">🎯 Target Pekanan</button>
           <button class="btn btn-sm" onclick="openRekapRilisModal('${m.id}','${sp.id}')" title="Rekap otomatis dari chat grup Telegram">📥 Rekap dari Telegram</button>
@@ -1641,11 +1658,10 @@ function renderAktivitas(m,sp,c){
         </div>
       </div>
       <table>
-        <thead><tr><th>Bulan</th><th>Tanggal</th><th>Rilis Berita</th><th>Lokasi (Kota)</th><th>Jml. Dokumentasi</th><th></th></tr></thead>
+        <thead><tr><th>Tanggal</th><th>Rilis Berita</th><th>Lokasi (Kota)</th><th>Jml. Dokumentasi</th><th></th></tr></thead>
         <tbody>
-        ${harianSorted.map(({a,i})=>`
+        ${harianBerjalan.map(({a,i})=>`
           <tr>
-            <td>${bulanFromTanggal(a.tanggal)}</td>
             <td class="mono">${fmtDate(a.tanggal)}</td>
             <td>${escHtml(a.rilisBerita||a.judul||'')}</td>
             <td>${escHtml(a.lokasi)||'—'}</td>
@@ -1654,9 +1670,26 @@ function renderAktivitas(m,sp,c){
               <button class="icon-btn" onclick="openEditHarianModal('${m.id}','${sp.id}',${i})">✎</button>
               <button class="icon-btn" onclick="hapusHarian('${m.id}','${sp.id}',${i})">✕</button>
             </td>
-          </tr>`).join('') || `<tr><td colspan="6"><div class="empty-state">Belum ada aktivitas harian tercatat.</div></td></tr>`}
+          </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">Belum ada aktivitas harian bulan ini.</div></td></tr>`}
         </tbody>
       </table>
+      ${bulanLalu.length ? `
+      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
+        <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap Bulanan (Bulan Sebelumnya)</div>
+        <table style="font-size:12px;">
+          <thead><tr><th>Bulan</th><th style="text-align:right;">Rilis Berita</th><th style="text-align:right;">Jumlah Kota</th><th style="text-align:right;">Dokumentasi</th><th></th></tr></thead>
+          <tbody>
+            ${bulanLalu.map(b=>`
+              <tr>
+                <td>${b.bulanLabel}</td>
+                <td style="text-align:right;">${b.jumlahRilis} rilis berita</td>
+                <td style="text-align:right;">${b.jumlahKota} Kota</td>
+                <td style="text-align:right;">${b.totalDokumentasi} dokumentasi</td>
+                <td class="row-actions"><button class="icon-btn" title="Lihat detail" onclick="lihatDetailBulanHarian('${m.id}','${sp.id}','${b.ym}')">👁</button></td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
       ${pekanRekap.length ? `
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
         <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Pekan</div>
@@ -1796,6 +1829,45 @@ function hapusHarian(mid,spId,idx){
   sp.aktivitasHarian.splice(idx,1);
   persistMitra(m);
   renderAll();
+}
+/* Isi dari satu baris "Rekap Bulanan" (bulan yang sudah berakhir) — entri lama
+   tetap bisa dilihat, diedit, dan dihapus lewat sini walau tidak lagi tampil
+   satu-satu di tabel utama. */
+function lihatDetailBulanHarian(mid,spId,ym){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  const entries = sp.aktivitasHarian
+    .map((a,i)=>({a,i}))
+    .filter(({a})=>(a.tanggal||'').slice(0,7)===ym)
+    .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
+  openModalWide(`
+    <h3>Detail Rilis Berita — ${bulanFromTanggal(ym+'-01')}</h3>
+    <table style="width:100%; font-size:12px;">
+      <thead><tr><th>Tanggal</th><th>Rilis Berita</th><th>Lokasi</th><th style="text-align:right;">Jml. Dok.</th><th></th></tr></thead>
+      <tbody>
+        ${entries.map(({a,i})=>`
+          <tr>
+            <td class="mono">${fmtDate(a.tanggal)}</td>
+            <td>${escHtml(a.rilisBerita||a.judul||'')}</td>
+            <td>${escHtml(a.lokasi)||'—'}</td>
+            <td style="text-align:right;">${a.jumlahDokumentasi ?? 0}</td>
+            <td class="row-actions">
+              <button class="icon-btn" onclick="openEditHarianModal('${mid}','${spId}',${i})">✎</button>
+              <button class="icon-btn" onclick="hapusHarianDariDetail('${mid}','${spId}',${i},'${ym}')">✕</button>
+            </td>
+          </tr>`).join('') || `<tr><td colspan="5"><div class="empty-state">Tidak ada entri.</div></td></tr>`}
+      </tbody>
+    </table>
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Tutup</button></div>
+  `);
+}
+function hapusHarianDariDetail(mid,spId,idx,ym){
+  const m = mitraList.find(x=>x.id===mid);
+  const sp = m.subProgram.find(p=>p.id===spId);
+  sp.aktivitasHarian.splice(idx,1);
+  persistMitra(m);
+  renderAll();
+  lihatDetailBulanHarian(mid,spId,ym);
 }
 /* Label minggu format: "Minggu ke-{pekan} {Bulan} {Tahun}" — pekan & bulan/tahun via dropdown */
 function parseMingguLabel(str){
