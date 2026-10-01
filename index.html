@@ -2522,11 +2522,20 @@ function refreshBobotTotal(){
 }
 function returnFromBobotSettings(){
   const ret = bobotSettingsReturnTo;
+  // openRaportModal/openEditRaportModal di bawah akan mereset raportPreviewCtx
+  // (balik ke default/nilai tersimpan lama) — simpan dulu bobot/target yang
+  // berlaku SAAT INI (hasil Simpan, atau tetap yang lama kalau Batal) supaya
+  // bisa dikembalikan lagi setelah form raport terbuka ulang.
+  const bobotAktif = raportPreviewCtx.bobot;
+  const targetAktif = raportPreviewCtx.target;
   bobotSettingsReturnTo = null;
   closeModal();
   if(ret){
     if(ret.mode==='add') openRaportModal(ret.mid, ret.spId);
     else openEditRaportModal(ret.mid, ret.spId, ret.idx);
+    raportPreviewCtx.bobot = bobotAktif;
+    raportPreviewCtx.target = targetAktif;
+    refreshRaportPreview(ret.mode==='add' ? 'r' : 'er');
   }
 }
 function batalBobotSettings(){ returnFromBobotSettings(); }
