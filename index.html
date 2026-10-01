@@ -2173,21 +2173,38 @@ function quarterBulanList(kuartalKey, tahun){
 }
 function danaInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return sp.dana.filter(d=>list.includes(d.bulan)); }
 function laporanInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return sp.laporanBulanan.filter(l=>list.includes(l.bulan)); }
-function harianInQuarter(sp,kuartal,tahun){
-  const q = QUARTALS.find(x=>x.key===kuartal) || QUARTALS[0];
-  return sp.aktivitasHarian.filter(a=>{
-    if(!a.tanggal) return false;
-    const [y,mo] = a.tanggal.split('-').map(Number);
-    return y===Number(tahun) && q.months.includes(mo-1);
-  });
-}
 function waktuPenerimaanPct(sp,kuartal,tahun){
   const entries = laporanInQuarter(sp,kuartal,tahun);
   if(!entries.length) return null;
   const total = entries.reduce((a,l)=>{ const s=slaLaporan(l.targetTanggal,l.diterimaTanggal); return a+(s.pct===null?0:s.pct); },0);
   return Math.round(total/entries.length);
 }
-function rilisBeritaPct(sp,kuartal,tahun){ return harianInQuarter(sp,kuartal,tahun).length ? 100 : 0; }
+/* Mengacu langsung ke % yang muncul di tab Aktivitas → Rilis Berita & Dokumentasi
+   (Harian) → Rekap per Pekan (realisasi jumlah rilis ÷ Target Rilis Pekanan).
+   Nilainya = rata-rata persentase semua pekan dalam kuartal ini yang punya target
+   terisi (pekan tanpa target diabaikan, bukan dianggap 0%; pekan dengan target
+   tapi nol rilis tetap dihitung 0% — bukan diabaikan). */
+function rilisBeritaPct(sp,kuartal,tahun){
+  const q = QUARTALS.find(x=>x.key===kuartal) || QUARTALS[0];
+  const target = sp.targetRilisPekanan;
+  if(!target || !(target.p1||target.p2||target.p3||target.p4)) return null;
+  const pctList = [];
+  q.months.forEach(mi=>{
+    const ym = `${tahun}-${String(mi+1).padStart(2,'0')}`;
+    const perPekan = {1:0,2:0,3:0,4:0};
+    sp.aktivitasHarian.forEach(a=>{
+      if((a.tanggal||'').slice(0,7)!==ym) return;
+      const p = pekanFromTanggal(a.tanggal);
+      if(p) perPekan[p]++;
+    });
+    for(let p=1;p<=4;p++){
+      const t = Number(target[`p${p}`])||0;
+      if(t>0) pctList.push(pekanPct(perPekan[p], t));
+    }
+  });
+  if(!pctList.length) return null;
+  return Math.round(pctList.reduce((s,v)=>s+v,0)/pctList.length);
+}
 function zreportPct(sp,kuartal,tahun){
   const entries = laporanInQuarter(sp,kuartal,tahun);
   if(!entries.length) return null;
