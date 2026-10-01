@@ -2283,10 +2283,11 @@ function renderAspekRowsHtml(aspects){
   }).join('');
 }
 function gradeFromPct(pct){
+  // Acuan grading: 0-60 Poor, 61-84 Average, 85-100 Good, >100 Excellent
   if(pct===null) return '-';
-  if(pct>=85) return 'Excellent';
-  if(pct>=70) return 'Good';
-  if(pct>=50) return 'Average';
+  if(pct>100) return 'Excellent';
+  if(pct>=85) return 'Good';
+  if(pct>=61) return 'Average';
   return 'Poor';
 }
 function gradeColorRgb(grade){
