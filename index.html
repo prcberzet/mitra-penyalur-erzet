@@ -1640,8 +1640,18 @@ function renderAktivitas(m,sp,c){
     .map((a,i)=>({a,i}))
     .sort((x,y)=>(y.a.tanggal||'').localeCompare(x.a.tanggal||''));
   const harianBerjalan = harianSorted.filter(({a})=>(a.tanggal||'').slice(0,7) >= currentYM);
-  const bulanLalu = rekapPerBulan(sp.aktivitasHarian).filter(x=>x.ym < currentYM);
-  const pekanRekap = rekapPerPekan(sp.aktivitasHarian, sp.targetRilisPekanan);
+  // % capaian per bulan (rata-rata dari 4 pekan terhadap Target Rilis Pekanan) —
+  // dipakai juga oleh aspek "Rilis Berita & Dokumentasi" di Raport Kinerja.
+  const pctPerBulan = {};
+  rekapPerPekan(sp.aktivitasHarian, sp.targetRilisPekanan).forEach(p=>{
+    if(!pctPerBulan[p.ym]) pctPerBulan[p.ym] = [];
+    if(p.pct!==null) pctPerBulan[p.ym].push(p.pct);
+  });
+  const bulanLalu = rekapPerBulan(sp.aktivitasHarian).filter(x=>x.ym < currentYM).map(b=>{
+    const list = pctPerBulan[b.ym]||[];
+    const pct = list.length ? Math.round(list.reduce((s,v)=>s+v,0)/list.length) : null;
+    return {...b, pct, status:statusFromPct(pct)};
+  });
   c.innerHTML = `
     <datalist id="lokasiOptions">${lokasiDatalistOptions(sp)}</datalist>
     <div class="panel">
@@ -1673,7 +1683,7 @@ function renderAktivitas(m,sp,c){
       <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
         <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap Bulanan (Bulan Sebelumnya)</div>
         <table style="font-size:12px;">
-          <thead><tr><th>Bulan</th><th style="text-align:right;">Rilis Berita</th><th style="text-align:right;">Jumlah Kota</th><th style="text-align:right;">Dokumentasi</th><th></th></tr></thead>
+          <thead><tr><th>Bulan</th><th style="text-align:right;">Rilis Berita</th><th style="text-align:right;">Jumlah Kota</th><th style="text-align:right;">Dokumentasi</th><th style="text-align:right;">% Capaian</th><th></th></tr></thead>
           <tbody>
             ${bulanLalu.map(b=>`
               <tr>
@@ -1681,52 +1691,12 @@ function renderAktivitas(m,sp,c){
                 <td style="text-align:right;">${b.jumlahRilis} rilis berita</td>
                 <td style="text-align:right;">${b.jumlahKota} Kota</td>
                 <td style="text-align:right;">${b.totalDokumentasi} dokumentasi</td>
+                <td style="text-align:right;">${b.status?`<span class="chip ${statusChipClass[b.status]}">${b.pct}%</span>`:'—'}</td>
                 <td class="row-actions"><button class="icon-btn" title="Lihat detail" onclick="lihatDetailBulanHarian('${m.id}','${sp.id}','${b.ym}')">👁</button></td>
               </tr>`).join('')}
           </tbody>
         </table>
-      </div>` : ''}
-      ${pekanRekap.length ? `
-      <div style="margin-top:16px; padding-top:14px; border-top:1px solid var(--line);">
-        <div style="font-size:12.5px; font-weight:600; margin-bottom:8px;">Rekap per Pekan</div>
-        <table style="font-size:12px;">
-          <thead><tr><th>Bulan</th><th>Pekan</th><th style="text-align:right;">Jumlah Rilis</th><th style="text-align:right;">Total Dokumentasi</th><th style="text-align:right;">Target</th><th>%</th></tr></thead>
-          <tbody>
-            ${pekanRekap.filter(p=>p.ym>=currentYM).map(p=>{
-              const status = statusFromPct(p.pct);
-              return `<tr>
-                <td>${p.bulanLabel}</td>
-                <td>Pekan ${p.pekan}</td>
-                <td style="text-align:right;">${p.jumlahRilis}</td>
-                <td style="text-align:right;">${p.totalDokumentasi}</td>
-                <td style="text-align:right;">${p.target||'—'}</td>
-                <td>${status?`<span class="chip ${statusChipClass[status]}">${p.pct}%</span>`:'—'}</td>
-              </tr>`;
-            }).join('')}
-            ${(()=>{
-              // Bulan yang sudah berakhir: 4 pekannya digabung jadi 1 baris, % = rata-rata dari 4 pekan
-              const byYm = {};
-              pekanRekap.filter(p=>p.ym<currentYM).forEach(p=>{
-                if(!byYm[p.ym]) byYm[p.ym] = {bulanLabel:p.bulanLabel, jumlahRilis:0, totalDokumentasi:0, pctList:[]};
-                byYm[p.ym].jumlahRilis += p.jumlahRilis;
-                byYm[p.ym].totalDokumentasi += p.totalDokumentasi;
-                if(p.pct!==null) byYm[p.ym].pctList.push(p.pct);
-              });
-              return Object.entries(byYm).sort((a,b)=>b[0].localeCompare(a[0])).map(([ym,b])=>{
-                const rataPct = b.pctList.length ? Math.round(b.pctList.reduce((s,v)=>s+v,0)/b.pctList.length) : null;
-                const status = statusFromPct(rataPct);
-                return `<tr>
-                  <td>${b.bulanLabel}</td>
-                  <td>Rata-rata 4 Pekan</td>
-                  <td style="text-align:right;">${b.jumlahRilis}</td>
-                  <td style="text-align:right;">${b.totalDokumentasi}</td>
-                  <td style="text-align:right;">—</td>
-                  <td>${status?`<span class="chip ${statusChipClass[status]}">${rataPct}%</span>`:'—'}</td>
-                </tr>`;
-              }).join('');
-            })()}
-          </tbody>
-        </table>
+        <div style="font-size:11px; color:var(--ink-faint); margin-top:6px;">% Capaian = rata-rata realisasi 4 pekan terhadap Target Rilis Pekanan (atur lewat tombol 🎯 Target Pekanan).</div>
       </div>` : ''}
     </div>
     <div class="panel">
