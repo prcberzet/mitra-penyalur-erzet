@@ -792,14 +792,20 @@ let pejabatList = [               // daftar pejabat penandatangan raport, disink
   {id:'peg2', jabatan:'Kepala Divisi Monitoring & Evaluasi', nama:'Sri Wulandari', ttd:''},
   {id:'peg3', jabatan:'Direktur Program', nama:'Hendra Kusnadi', ttd:''},
 ];
-let bobotAspek = {                // % pembobotan tiap aspek penilaian raport, disinkron terpisah dari data mitra
+/* Bobot & target TIDAK LAGI berupa aturan umum/global — setiap raport (kuartal +
+   sub program) menyimpan bobot/target miliknya sendiri (r.bobot / r.target).
+   Konstanta ini cuma dipakai sebagai nilai awal (seed) saat menerbitkan raport
+   baru, dan fallback untuk raport lama yang dibuat sebelum field ini ada. */
+const DEFAULT_BOBOT = {
   waktuProject: 10, kontenProject: 10, waktuReguler: 15, kontenReguler: 15,
   dss: 25, pm: 25, dampak: 0,
 };
-let targetAspek = {                // % target capaian tiap aspek — Nilai = (Capaian ÷ Target) × Bobot
+const DEFAULT_TARGET = {
   waktuProject: 100, kontenProject: 100, waktuReguler: 100, kontenReguler: 100,
   dss: 100, pm: 100, dampak: 100,
 };
+function raportBobot(r){ return (r && r.bobot) ? r.bobot : DEFAULT_BOBOT; }
+function raportTarget(r){ return (r && r.target) ? r.target : DEFAULT_TARGET; }
 
 const ALL_STAGES = [
   {key:'pra', label:'Pra'},
@@ -945,12 +951,6 @@ async function persistPejabat(){
   try{ await fb.setDoc(fb.doc(db,'config','pejabat'), { list: pejabatList }); }
   catch(e){ console.error('Gagal menyimpan daftar pejabat ke Firebase:', e); }
 }
-async function persistBobot(){
-  if(!db) return; // Mode demo lokal: perubahan cukup disimpan di memori browser
-  const fb = window.__fb;
-  try{ await fb.setDoc(fb.doc(db,'config','bobot'), { weights: bobotAspek, targets: targetAspek }); }
-  catch(e){ console.error('Gagal menyimpan bobot aspek ke Firebase:', e); }
-}
 async function removeMitraRemote(id){
   if(!db) return;
   const fb = window.__fb;
@@ -964,7 +964,6 @@ function newMitraId(){
 
 let unsubscribeMitra = null;
 let unsubscribePejabat = null;
-let unsubscribeBobot = null;
 
 window.addEventListener('fb-ready', () => {
   const fb = window.__fb;
@@ -1004,18 +1003,9 @@ window.addEventListener('fb-ready', () => {
       }, err => {
         console.error('Gagal memuat daftar pejabat:', err);
       });
-      if(unsubscribeBobot) unsubscribeBobot();
-      unsubscribeBobot = fb.onSnapshot(fb.doc(db,'config','bobot'), docSnap => {
-        bobotAspek = (docSnap.exists() && docSnap.data().weights) ? docSnap.data().weights : bobotAspek;
-        targetAspek = (docSnap.exists() && docSnap.data().targets) ? docSnap.data().targets : targetAspek;
-        renderAll();
-      }, err => {
-        console.error('Gagal memuat bobot aspek:', err);
-      });
     } else {
       if(unsubscribeMitra){ unsubscribeMitra(); unsubscribeMitra = null; }
       if(unsubscribePejabat){ unsubscribePejabat(); unsubscribePejabat = null; }
-      if(unsubscribeBobot){ unsubscribeBobot(); unsubscribeBobot = null; }
       connDot.classList.remove('live'); connDot.classList.add('demo');
       connLabel.textContent = 'Belum login';
       loginOverlay.style.display = 'flex';
@@ -2253,32 +2243,41 @@ function raportAspekList(sp, r){
   aspects.forEach((a,idx)=>{ a.no = idx+1; }); // nomor urut mengikuti aspek yang benar-benar tampil
   return aspects;
 }
-/* Kontribusi nilai 1 aspek ke Nilai Akhir: (Capaian ÷ Target) × Bobot. */
-function aspekKontribusi(a){
-  if(a.pct===null || !a.key) return null;
-  const bobot = Number(bobotAspek[a.key])||0;
-  const target = Number(targetAspek[a.key])||0;
-  if(!target) return 0;
-  return (a.pct/target)*bobot;
+/* Hitung Bobot Efektif & Nilai (kontribusi) tiap aspek YANG BENAR-BENAR TAMPIL
+   di raport ini. Bobot mentah (dari r.bobot) dinormalkan ulang secara
+   proporsional supaya totalnya tetap 100% walau sebagian aspek tidak berlaku
+   (mis. 2 Aspek Project ikut tidak muncul kalau "Ada Project" tidak dicentang) —
+   jadi bobot aspek lain otomatis naik proporsional, bukan sekadar kehilangan jatah. */
+function raportAspekListScored(sp,r){
+  const aspects = raportAspekList(sp,r);
+  const bobotMap = raportBobot(r);
+  const targetMap = raportTarget(r);
+  const totalBobotTampil = aspects.reduce((s,a)=> s + (a.key? (Number(bobotMap[a.key])||0) : 0), 0);
+  aspects.forEach(a=>{
+    if(!a.key){ a.bobotEfektif=null; a.target=null; a.kontribusi=null; return; }
+    const bobotMentah = Number(bobotMap[a.key])||0;
+    a.bobotEfektif = totalBobotTampil>0 ? Math.round(bobotMentah/totalBobotTampil*1000)/10 : 0;
+    a.target = Number(targetMap[a.key])||0;
+    a.kontribusi = a.pct===null ? null : (a.target>0 ? (a.pct/a.target)*a.bobotEfektif : 0);
+  });
+  return aspects;
 }
 function raportOverallPct(sp,r){
-  const scored = raportAspekList(sp,r).filter(a=>a.pct!==null && a.key);
+  const aspects = raportAspekListScored(sp,r);
+  const scored = aspects.filter(a=>a.pct!==null && a.key);
   if(!scored.length) return null;
-  const total = scored.reduce((sum,a)=>sum + (aspekKontribusi(a)||0), 0);
+  const total = scored.reduce((sum,a)=>sum + (a.kontribusi||0), 0);
   return Math.round(total);
 }
 const ASPEK_TABLE_HEAD = `<tr><th>Aspek Penilaian</th><th class="num-cell">Capaian</th><th class="num-cell">Nilai</th></tr>`;
 function renderAspekRowsHtml(aspects){
   return aspects.map(a=>{
-    const kontribusi = aspekKontribusi(a);
-    const bobot = a.key? (bobotAspek[a.key]??0) : null;
-    const target = a.key? (targetAspek[a.key]??100) : null;
     return `<tr>
-      <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot: ${bobot}% · Target: ${target}%)</span>`:''}
+      <td>${a.no}. ${a.nama}${a.key?` <span style="color:var(--ink-faint);">(Bobot efektif: ${a.bobotEfektif}% · Target: ${a.target}%)</span>`:''}
         <div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">${a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join(' · ')}</div>
       </td>
       <td class="num-cell">${pctBadge(a.pct)}</td>
-      <td class="num-cell">${kontribusi===null?'—':Math.round(kontribusi*10)/10+'%'}</td>
+      <td class="num-cell">${a.kontribusi===null?'—':Math.round(a.kontribusi*10)/10+'%'}</td>
     </tr>`;
   }).join('');
 }
@@ -2323,7 +2322,7 @@ function renderEvaluasi(m,sp,c){
         <button class="btn btn-primary btn-sm" onclick="openRaportModal('${m.id}','${sp.id}')">+ Terbitkan Raport</button>
       </div>
       ${sortedRaportEntries(sp).map(({r,i})=>{
-        const aspects = raportAspekList(sp,r);
+        const aspects = raportAspekListScored(sp,r);
         const overall = raportOverallPct(sp,r);
         return `<div class="raport-card">
           <div class="raport-title" onclick="toggleRaportPin(this.closest('.raport-card'))">
@@ -2484,18 +2483,25 @@ const BOBOT_LABELS = [
   {key:'dampak', label:'7. Dampak Program'},
 ];
 function openBobotSettingsModal(){
-  bobotDraft = {...bobotAspek};
-  targetDraft = {...targetAspek};
+  // Diambil dari draft raport yang sedang dibuka (bukan aturan global) — lihat
+  // raportPreviewCtx di openRaportModal/openEditRaportModal.
+  bobotDraft = {...raportPreviewCtx.bobot};
+  targetDraft = {...raportPreviewCtx.target};
   renderBobotSettingsModal();
 }
 function bobotTotalText(total){
-  return total===100 ? `Total bobot: ${total}% ✓` : `Total bobot: ${total}% (sebaiknya tepat 100%)`;
+  return total===100 ? `Total bobot: ${total}% ✓` : `Total bobot: ${total}% (otomatis dinormalkan ke 100% saat dihitung, berapa pun totalnya)`;
 }
 function renderBobotSettingsModal(){
   const total = BOBOT_LABELS.reduce((a,b)=>a+(Number(bobotDraft[b.key])||0),0);
+  const prefix = bobotSettingsReturnTo?.mode==='edit' ? 'er' : 'r';
+  const kuartalText = document.getElementById(`f_${prefix}kuartal`)?.selectedOptions?.[0]?.text || '';
+  const tahunText = document.getElementById(`f_${prefix}tahun`)?.value || '';
+  const scopeLabel = `${kuartalText} ${tahunText} — ${raportPreviewCtx.sp?.nama||''}`.trim();
   openModalWide(`
     <h3>Pengaturan % Pembobotan & Target Aspek Penilaian</h3>
-    <div class="tag-note">Nilai tiap aspek dihitung: Capaian ÷ Target × Bobot. Kalau Aspek 1 & 2 (Project) tidak berlaku (checkbox "Ada Project" tidak dicentang saat menerbitkan raport), bobot keduanya otomatis didistribusikan ulang secara proporsional ke aspek lain, dan penomoran aspek mulai dari 1 lagi (Waktu Penerimaan Laporan Program Reguler jadi nomor 1) — tidak perlu diatur manual per raport.</div>
+    <div class="tag-note" style="font-weight:600;">⚠️ Pengaturan ini HANYA berlaku untuk raport ${escHtml(scopeLabel)} yang sedang dibuka — bukan aturan umum untuk raport/sub program lain.</div>
+    <div class="tag-note">Nilai tiap aspek dihitung: Capaian ÷ Target × Bobot Efektif. Kalau Aspek 1 & 2 (Project) tidak berlaku (checkbox "Ada Project" tidak dicentang), bobot keduanya otomatis didistribusikan ulang secara proporsional ke aspek lain yang tampil, dan penomoran aspek mulai dari 1 lagi.</div>
     ${BOBOT_LABELS.map(b=>`
       <div style="display:flex; gap:10px;">
         <div class="field" style="flex:2;"><label>${b.label} — Bobot (%)</label><input type="number" value="${bobotDraft[b.key]??0}" oninput="bobotDraft['${b.key}']=Number(this.value)||0; refreshBobotTotal();"></div>
@@ -2505,7 +2511,7 @@ function renderBobotSettingsModal(){
     <div id="bobotTotalInfo" class="tag-note" style="font-weight:600;">${bobotTotalText(total)}</div>
     <div class="modal-actions" style="margin-top:16px;">
       <button class="btn" onclick="batalBobotSettings()">Batal</button>
-      <button class="btn btn-primary" onclick="simpanBobotSettings()">Simpan Pengaturan</button>
+      <button class="btn btn-primary" onclick="simpanBobotSettings()">Pakai untuk Raport Ini</button>
     </div>
   `);
 }
@@ -2525,9 +2531,10 @@ function returnFromBobotSettings(){
 }
 function batalBobotSettings(){ returnFromBobotSettings(); }
 function simpanBobotSettings(){
-  bobotAspek = {...bobotDraft};
-  targetAspek = {...targetDraft};
-  persistBobot();
+  // Ditulis ke draft raport yang sedang dibuka saja (raportPreviewCtx), BUKAN ke
+  // pengaturan global — raport lain tidak terpengaruh sama sekali.
+  raportPreviewCtx.bobot = {...bobotDraft};
+  raportPreviewCtx.target = {...targetDraft};
   returnFromBobotSettings();
 }
 
@@ -2600,6 +2607,8 @@ function readRaportForm(prefix){
     disusunOlehId: document.getElementById(`f_${prefix}disusun`).value,
     diperiksaOlehId: document.getElementById(`f_${prefix}diperiksa`).value,
     disahkanOlehId: document.getElementById(`f_${prefix}disahkan`).value,
+    bobot: {...raportPreviewCtx.bobot},
+    target: {...raportPreviewCtx.target},
   };
 }
 function refreshRaportPreview(prefix){
@@ -2615,12 +2624,14 @@ function refreshRaportPreview(prefix){
     asnafProject: document.getElementById(`f_${prefix}asnafproject`).value,
     asnafReguler: document.getElementById(`f_${prefix}asnafreguler`).value,
     targetPM: Number(document.getElementById(`f_${prefix}targetpm`).value)||0,
+    bobot: raportPreviewCtx.bobot,
+    target: raportPreviewCtx.target,
   };
   const sp = raportPreviewCtx.sp;
-  const aspects = raportAspekList(sp, r);
+  const aspects = raportAspekListScored(sp, r);
   const overall = raportOverallPct(sp, r);
   document.getElementById(`raportPreview_${prefix}`).innerHTML = `
-    <div class="tag-note" style="margin-bottom:8px;">Nilai tiap aspek = Capaian ÷ Target × Bobot — dihitung otomatis dari data Dana, Laporan, dan Aktivitas pada kuartal terpilih (hanya Kesesuaian Asnaf, Target Penerima Manfaat, dan status "Ada Project" yang diisi manual).</div>
+    <div class="tag-note" style="margin-bottom:8px;">Nilai tiap aspek = Capaian ÷ Target × Bobot — dihitung otomatis dari data Dana, Laporan, dan Aktivitas pada kuartal terpilih (hanya Kesesuaian Asnaf, Target Penerima Manfaat, dan status "Ada Project" yang diisi manual). Bobot & target di bawah hanya berlaku untuk raport kuartal ini.</div>
     <table>
       <thead>${ASPEK_TABLE_HEAD}</thead>
       <tbody>
@@ -2633,7 +2644,9 @@ let raportPreviewCtx = {};
 function openRaportModal(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  raportPreviewCtx = { sp };
+  // Raport baru: bobot/target mulai dari nilai default sebagai titik awal saja —
+  // begitu disimpan, jadi milik raport ini sendiri, lepas dari raport lain.
+  raportPreviewCtx = { sp, bobot:{...DEFAULT_BOBOT}, target:{...DEFAULT_TARGET} };
   openModal(`
     <h3>Terbitkan Raport Kinerja</h3>
     ${raportFormFields('r', null, mid, spId)}
@@ -2651,8 +2664,10 @@ function simpanRaport(mid,spId){
 function openEditRaportModal(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  raportPreviewCtx = { sp };
   const r = sp.evaluasi.raport[idx];
+  // Pakai bobot/target milik raport ini sendiri (fallback ke default kalau raport
+  // lama belum punya, dibuat sebelum bobot di-scope per raport).
+  raportPreviewCtx = { sp, bobot: r.bobot?{...r.bobot}:{...DEFAULT_BOBOT}, target: r.target?{...r.target}:{...DEFAULT_TARGET} };
   openModal(`
     <h3>Edit Raport Kinerja</h3>
     ${raportFormFields('er', r, mid, spId, idx)}
@@ -2695,7 +2710,7 @@ function exportRaport(mid,spId,idx){
   const marginL = 15, marginR = 15;
   const contentR = pageW - marginR;
 
-  const aspects = raportAspekList(sp,r);
+  const aspects = raportAspekListScored(sp,r);
   const overall = raportOverallPct(sp,r);
   const grade = gradeFromPct(overall);
   const q = QUARTALS.find(x=>x.key===r.kuartal) || QUARTALS[0];
@@ -2776,15 +2791,14 @@ function exportRaport(mid,spId,idx){
   y += 4;
 
   const rows = aspects.map(a=>{
-    const kontribusi = aspekKontribusi(a);
     return [
       String(a.no),
       a.nama,
       a.detail.map(d=>`${d.label}: ${d.pct===null?(d.text||'—'):d.pct+'%'}`).join('\n'),
-      a.key?`${bobotAspek[a.key]??0}%`:'-',
-      a.key?`${targetAspek[a.key]??100}%`:'-',
+      a.key?`${a.bobotEfektif??0}%`:'-',
+      a.key?`${a.target??100}%`:'-',
       a.pct===null?'Belum tersedia':`${a.pct}%`,
-      kontribusi===null?'-':`${Math.round(kontribusi*10)/10}%`,
+      a.kontribusi===null?'-':`${Math.round(a.kontribusi*10)/10}%`,
     ];
   });
   doc.autoTable({
