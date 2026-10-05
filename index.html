@@ -793,6 +793,28 @@ function isRekapAll(){
   const m = mitraList.find(x=>x.id===selectedMitraId);
   return !!m && activeSubProgramId===ALL_SP_ID && m.subProgram.length>1;
 }
+/* Sub program "semu" hasil penggabungan seluruh sub program 1 mitra. Dipakai agar fungsi
+   perhitungan raport yang sudah ada (raportAspekList dst.) bisa dipakai apa adanya:
+   data Dana/Laporan/Aktivitas digabung (array disambung), Target Rilis Pekanan dijumlahkan,
+   dan evaluasi.raport menunjuk ke m.raportAll (referensi array yang sama, jadi
+   push/splice/edit langsung tersimpan ke data mitra). */
+function mergedSubProgram(m){
+  m.raportAll = Array.isArray(m.raportAll) ? m.raportAll : [];
+  const sumTarget = k => m.subProgram.reduce((a,sp)=>a+(Number(sp.targetRilisPekanan && sp.targetRilisPekanan[k])||0),0);
+  return {
+    id: ALL_SP_ID,
+    nama: `Gabungan ${m.subProgram.length} Sub Program`,
+    dana: m.subProgram.flatMap(sp=>sp.dana),
+    laporanBulanan: m.subProgram.flatMap(sp=>sp.laporanBulanan),
+    aktivitasHarian: m.subProgram.flatMap(sp=>sp.aktivitasHarian),
+    aktivitasMingguan: m.subProgram.flatMap(sp=>sp.aktivitasMingguan),
+    targetRilisPekanan: {p1:sumTarget('p1'), p2:sumTarget('p2'), p3:sumTarget('p3'), p4:sumTarget('p4')},
+    evaluasi: {raport: m.raportAll, jadwal:[], catatan:[]},
+  };
+}
+function findSp(m, spId){
+  return spId===ALL_SP_ID ? mergedSubProgram(m) : m.subProgram.find(p=>p.id===spId);
+}
 let activeStage = 'dana';
 let db = null;                   // diisi setelah bootstrap Firebase selesai dicek
 let pejabatList = [               // daftar pejabat penandatangan raport, disinkron terpisah dari data mitra
@@ -909,6 +931,7 @@ function normalizeMitra(m){
   m.singkatan = m.singkatan || autoSingkatan(m.nama);
   m.program = m.program || 'Mitra Penyalur';
   m.subProgram = (m.subProgram && m.subProgram.length) ? m.subProgram : [defaultSubProgram()];
+  m.raportAll = Array.isArray(m.raportAll) ? m.raportAll : []; // Raport Kinerja gabungan (Σ Rekap All)
   m.subProgram.forEach(sp=>{
     sp.dana = sp.dana || [];
     sp.aktivitasHarian = sp.aktivitasHarian || [];
@@ -1276,7 +1299,8 @@ function renderContent(){
    semua sub program 1 mitra. Nama sub program bisa diklik untuk loncat ke tab aslinya
    (tahap yang sama) kalau perlu mengubah data. */
 function rekapAllNote(m){
-  return `<div class="tag-note" style="margin-bottom:12px;">Rekap gabungan ${m.subProgram.length} sub program milik ${escHtml(m.nama)} — tampilan baca saja. Klik nama sub program untuk membuka tab aslinya dan mengubah data.</div>`;
+  const kecuali = activeStage==='evaluasi' ? ' (kecuali Raport Kinerja Gabungan, yang bisa diterbitkan di sini)' : '';
+  return `<div class="tag-note" style="margin-bottom:12px;">Rekap gabungan ${m.subProgram.length} sub program milik ${escHtml(m.nama)} — tampilan baca saja${kecuali}. Klik nama sub program untuk membuka tab aslinya dan mengubah data.</div>`;
 }
 function spLink(sp){
   return `<a style="cursor:pointer; color:var(--brand);" onclick="setSubProgram('${sp.id}')">${escHtml(sp.nama)}</a>`;
@@ -1488,6 +1512,7 @@ function renderRekapAllEvaluasi(m,c){
         </tbody>
       </table>
     </div>
+    ${raportPanelHtml(m,mergedSubProgram(m))}
     <div class="panel">
       <div class="panel-head"><div><h3>Jadwal Meeting Evaluasi Terjadwal</h3><p>Gabungan seluruh sub program, diurutkan dari tanggal terdekat.</p></div></div>
       <table>
@@ -2544,11 +2569,12 @@ function sortedRaportEntries(sp){
 function sortedByTanggalDesc(arr){
   return arr.map((x,i)=>({x,i})).sort((a,b)=>(b.x.tanggal||'').localeCompare(a.x.tanggal||''));
 }
-function renderEvaluasi(m,sp,c){
-  c.innerHTML = `
+function raportPanelHtml(m,sp){
+  const isAll = sp.id===ALL_SP_ID;
+  return `
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Raport Kinerja — ${sp.nama}</h3><p>Penilaian berkala per kuartal terhadap kinerja sub program.</p></div>
+        <div><h3>Raport Kinerja${isAll?' Gabungan':''} — ${sp.nama}</h3><p>${isAll?'Penilaian per kuartal dari data gabungan seluruh sub program (Dana, Laporan, Aktivitas dijumlahkan).':'Penilaian berkala per kuartal terhadap kinerja sub program.'}</p></div>
         <button class="btn btn-primary btn-sm" onclick="openRaportModal('${m.id}','${sp.id}')">+ Terbitkan Raport</button>
       </div>
       ${sortedRaportEntries(sp).map(({r,i})=>{
@@ -2581,7 +2607,11 @@ function renderEvaluasi(m,sp,c){
           </div>
         </div>`;
       }).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
-    </div>
+    </div>`;
+}
+function renderEvaluasi(m,sp,c){
+  c.innerHTML = `
+    ${raportPanelHtml(m,sp)}
     <div class="panel">
       <div class="panel-head">
         <div><h3>Jadwal Meeting Evaluasi</h3><p>Agenda pertemuan evaluasi dengan mitra.</p></div>
@@ -2882,7 +2912,7 @@ function refreshRaportPreview(prefix){
 let raportPreviewCtx = {};
 function openRaportModal(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   // Raport baru: bobot/target mulai dari nilai default sebagai titik awal saja —
   // begitu disimpan, jadi milik raport ini sendiri, lepas dari raport lain.
   raportPreviewCtx = { sp, bobot:{...DEFAULT_BOBOT}, target:{...DEFAULT_TARGET} };
@@ -2895,14 +2925,14 @@ function openRaportModal(mid,spId){
 }
 function simpanRaport(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   sp.evaluasi.raport.push(readRaportForm('r'));
   persistMitra(m);
   closeModal(); renderAll();
 }
 function openEditRaportModal(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const r = sp.evaluasi.raport[idx];
   // Pakai bobot/target milik raport ini sendiri (fallback ke default kalau raport
   // lama belum punya, dibuat sebelum bobot di-scope per raport).
@@ -2916,14 +2946,14 @@ function openEditRaportModal(mid,spId,idx){
 }
 function simpanEditRaport(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   sp.evaluasi.raport[idx] = readRaportForm('er');
   persistMitra(m);
   closeModal(); renderAll();
 }
 function hapusRaport(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   sp.evaluasi.raport.splice(idx,1);
   persistMitra(m);
   renderAll();
@@ -2937,7 +2967,7 @@ function toggleRaportPin(cardEl){
    Identitas Dokumen: Mitra/Program/Sub Program; Tabel Aspek Penilaian; Nilai Akhir). */
 function exportRaport(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const r = sp.evaluasi.raport[idx];
   if(!window.jspdf || !window.jspdf.jsPDF){
     alert('Modul pembuat PDF belum termuat (perlu koneksi internet untuk memuat jsPDF dari CDN). Coba lagi setelah halaman selesai dimuat penuh.');
@@ -2954,7 +2984,7 @@ function exportRaport(mid,spId,idx){
   const grade = gradeFromPct(overall);
   const q = QUARTALS.find(x=>x.key===r.kuartal) || QUARTALS[0];
   const nomorUrut = idx + 1; // urutan penerbitan raport untuk sub program ini
-  const noFormulir = `${nomorUrut}/PRCB/PKMP/${m.singkatan || autoSingkatan(m.nama)}`;
+  const noFormulir = `${nomorUrut}/PRCB/PKMP/${m.singkatan || autoSingkatan(m.nama)}${spId===ALL_SP_ID?'/ALL':''}`;
   const namaProgram = m.program || 'Mitra Penyalur';
 
   /* --- HEADER --- */
