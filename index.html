@@ -2985,7 +2985,10 @@ function exportRaport(mid,spId,idx){
   const q = QUARTALS.find(x=>x.key===r.kuartal) || QUARTALS[0];
   const nomorUrut = idx + 1; // urutan penerbitan raport untuk sub program ini
   const noFormulir = `${nomorUrut}/PRCB/PKMP/${m.singkatan || autoSingkatan(m.nama)}${spId===ALL_SP_ID?'/ALL':''}`;
-  const namaProgram = m.program || 'Mitra Penyalur';
+  // "Program" di PDF = nama sub program. Raport gabungan (Σ Rekap All) menyebut semua sub program:
+  // "A & B" untuk 2, "A, B & C" untuk 3 atau lebih.
+  const namaSub = spId===ALL_SP_ID ? m.subProgram.map(p=>p.nama) : [sp.nama];
+  const namaProgram = namaSub.length>1 ? namaSub.slice(0,-1).join(', ')+' & '+namaSub[namaSub.length-1] : (namaSub[0]||'—');
 
   /* --- HEADER --- */
   const rightZoneStart = 138; // titik mulai blok kanan (No. Formulir/Tahun/Periode)
@@ -3050,9 +3053,9 @@ function exportRaport(mid,spId,idx){
   y += 6;
   doc.text('Program', marginL, y);
   doc.text(':', identColonX, y);
-  doc.text(namaProgram, identColonX + 3, y);
-  doc.text(`Sub Program : ${sp.nama}`, contentR, y, {align:'right'});
-  y += 10;
+  const programLines = doc.splitTextToSize(namaProgram, contentR - (identColonX + 3));
+  doc.text(programLines, identColonX + 3, y);
+  y += (programLines.length-1)*4.5 + 10; // nama program panjang dibungkus, bagian bawah ikut turun
 
   /* --- TABEL ASPEK PENILAIAN --- */
   doc.setFont('helvetica','bold'); doc.setFontSize(10);
