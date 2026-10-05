@@ -653,7 +653,7 @@
      └─ subProgram: [              ← satu mitra bisa punya beberapa sub program
           { id, nama, deskripsi,
             dana: [], aktivitasHarian: [], aktivitasMingguan: [],
-            laporanBulanan: [], evaluasi: { raport: [], jadwal: [], catatan: [] }
+            laporanBulanan: [], laporanProject: [], evaluasi: { raport: [], jadwal: [], catatan: [] }
           }
         ]
    Saat Firebase aktif, satu mitra = satu dokumen Firestore (koleksi "mitra"),
@@ -666,7 +666,7 @@ function defaultSubProgram(nama){
   return {
     id:'sp'+Date.now()+Math.floor(Math.random()*1000),
     nama: nama||'Program Utama', deskripsi:'',
-    dana:[], aktivitasHarian:[], aktivitasMingguan:[], laporanBulanan:[],
+    dana:[], aktivitasHarian:[], aktivitasMingguan:[], laporanBulanan:[], laporanProject:[],
     evaluasi:{raport:[],jadwal:[],catatan:[]}
   };
 }
@@ -819,6 +819,7 @@ function mergedSubProgram(m){
     nama: `Gabungan ${m.subProgram.length} Sub Program`,
     dana: m.subProgram.flatMap(sp=>sp.dana),
     laporanBulanan: m.subProgram.flatMap(sp=>sp.laporanBulanan),
+    laporanProject: m.subProgram.flatMap(sp=>sp.laporanProject||[]),
     aktivitasHarian: m.subProgram.flatMap(sp=>sp.aktivitasHarian),
     aktivitasMingguan: m.subProgram.flatMap(sp=>sp.aktivitasMingguan),
     targetRilisPekanan: {p1:sumTarget('p1'), p2:sumTarget('p2'), p3:sumTarget('p3'), p4:sumTarget('p4')},
@@ -939,6 +940,22 @@ function applyRouteFromUrl(){
 window.addEventListener('popstate', applyRouteFromUrl);
 
 /* ---------------------------- REALTIME SYNC ----------------------------- */
+/* Bentuk baku 1 entri laporan bulanan. withZReport=false untuk Laporan Project (tidak ada ZReport). */
+function normLaporanEntry(l, withZReport){
+  const wrapLink = v => (v && typeof v==='object') ? {link:v.link||''} : {link:''};
+  const out = {
+    bulan: l.bulan||'',
+    targetTanggal: l.targetTanggal||'',
+    diterimaTanggal: l.diterimaTanggal||'',
+    penerima: (l.penerima && typeof l.penerima==='object') ? {link:l.penerima.link||'', totalPP:l.penerima.totalPP||0, totalLM:l.penerima.totalLM||0} : {link:'', totalPP:0, totalLM:0},
+    keuangan: wrapLink(l.keuangan),
+    dokumentasi: wrapLink(l.dokumentasi),
+    tertulis: wrapLink(l.tertulis),
+    ppt: wrapLink(l.ppt),
+  };
+  if(withZReport){ out.zreportTanggalKirim = l.zreportTanggalKirim||''; out.zreportLink = l.zreportLink||''; }
+  return out;
+}
 function normalizeMitra(m){
   m.legalitas = m.legalitas || [];
   m.singkatan = m.singkatan || autoSingkatan(m.nama);
@@ -950,21 +967,8 @@ function normalizeMitra(m){
     sp.aktivitasHarian = sp.aktivitasHarian || [];
     sp.targetRilisPekanan = sp.targetRilisPekanan || {p1:0,p2:0,p3:0,p4:0};
     sp.aktivitasMingguan = sp.aktivitasMingguan || [];
-    sp.laporanBulanan = (sp.laporanBulanan || []).map(l=>{
-      const wrapLink = v => (v && typeof v==='object') ? {link:v.link||''} : {link:''};
-      return {
-        bulan: l.bulan||'',
-        zreportTanggalKirim: l.zreportTanggalKirim||'',
-        zreportLink: l.zreportLink||'',
-        targetTanggal: l.targetTanggal||'',
-        diterimaTanggal: l.diterimaTanggal||'',
-        penerima: (l.penerima && typeof l.penerima==='object') ? {link:l.penerima.link||'', totalPP:l.penerima.totalPP||0, totalLM:l.penerima.totalLM||0} : {link:'', totalPP:0, totalLM:0},
-        keuangan: wrapLink(l.keuangan),
-        dokumentasi: wrapLink(l.dokumentasi),
-        tertulis: wrapLink(l.tertulis),
-        ppt: wrapLink(l.ppt),
-      };
-    });
+    sp.laporanBulanan = (sp.laporanBulanan || []).map(l=>normLaporanEntry(l,true));
+    sp.laporanProject = (sp.laporanProject || []).map(l=>normLaporanEntry(l,false)); // Laporan Project: tanpa ZReport
     sp.evaluasi = sp.evaluasi || {raport:[],jadwal:[],catatan:[]};
     sp.evaluasi.raport = (sp.evaluasi.raport||[]).map(r=>{
       if(r.kuartal) return r; // sudah format kuartal baru
@@ -2280,8 +2284,12 @@ function komponenCell(obj, extraHtml){
     ${ok?`<div class="link-cell" style="margin-top:4px;"><a href="${obj.link}" target="_blank">Lihat ↗</a></div>`:''}
   </td>`;
 }
-function sortedLaporanEntries(sp){
-  return sp.laporanBulanan
+function laporanArr(sp,jenis){
+  if(jenis==='project'){ sp.laporanProject = sp.laporanProject || []; return sp.laporanProject; }
+  return sp.laporanBulanan;
+}
+function sortedLaporanEntries(sp,jenis){
+  return laporanArr(sp,jenis)
     .map((l,i)=>({l,i}))
     .sort((x,y)=>{
       const px = parseBulanTahun(x.l.bulan), py = parseBulanTahun(y.l.bulan);
@@ -2290,21 +2298,36 @@ function sortedLaporanEntries(sp){
       return BULAN_NAMES.indexOf(py.bulanNama) - BULAN_NAMES.indexOf(px.bulanNama);
     });
 }
+/* Jenis laporan yang sedang dibuka di tab Laporan: 'reguler' (default) atau 'project' */
+let laporanJenis = 'reguler';
+function setLaporanJenis(j){ laporanJenis = j; renderContent(); }
 function renderLaporan(m,sp,c){
+  const isProject = laporanJenis==='project';
+  const jenisArg = isProject ? ",'project'" : "";
+  const toggle = `
+    <div style="display:flex; gap:8px; margin-bottom:12px;">
+      <button class="btn btn-sm ${!isProject?'btn-primary':''}" onclick="setLaporanJenis('reguler')">Laporan Reguler</button>
+      <button class="btn btn-sm ${isProject?'btn-primary':''}" onclick="setLaporanJenis('project')">Laporan Project</button>
+    </div>`;
   c.innerHTML = `
+    ${toggle}
     <div class="panel">
       <div class="panel-head">
-        <div><h3>Kelengkapan Laporan Bulanan — ${sp.nama}</h3><p>SLA penerimaan, Data Penerima Manfaat, Keuangan, Dokumentasi, Laporan Tertulis, dan PPT Presentasi.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openLaporanModal('${m.id}','${sp.id}')">+ Tambah Bulan</button>
+        <div><h3>${isProject?'Kelengkapan Laporan Project':'Kelengkapan Laporan Bulanan'} — ${sp.nama}</h3><p>${isProject
+          ? 'Dipakai untuk penilaian aspek Project di Raport Kinerja. Isiannya sama dengan laporan reguler, tanpa ZReport.'
+          : 'SLA penerimaan, Data Penerima Manfaat, Keuangan, Dokumentasi, Laporan Tertulis, dan PPT Presentasi.'}</p></div>
+        <button class="btn btn-primary btn-sm" onclick="openLaporanModal('${m.id}','${sp.id}'${jenisArg})">+ Tambah Bulan</button>
       </div>
       <table>
         <thead><tr><th>Bulan</th><th>SLA Penerimaan</th><th>Data Penerima Manfaat</th><th>Keuangan</th><th>Dokumentasi</th><th>Laporan Tertulis</th><th>PPT Presentasi</th><th></th></tr></thead>
         <tbody>
-        ${sortedLaporanEntries(sp).map(({l,i})=>{
+        ${sortedLaporanEntries(sp,laporanJenis).map(({l,i})=>{
           const danaEntry = sp.dana.find(d=>d.bulan===l.bulan);
           const totalRealisasi = danaEntry ? (danaEntry.realisasiZakat||0)+(danaEntry.realisasiInfak||0) : 0;
-          const pmMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div><div style="margin-top:4px;">${slaZReportBadge(l)}</div>${l.zreportLink?`<div class="link-cell" style="margin-top:4px;"><a href="${l.zreportLink}" target="_blank">Lihat ZReport ↗</a></div>`:''}`;
-          const keuMeta = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div>`;
+          const ppLm = `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">PP: ${l.penerima.totalPP||0} · LM: ${l.penerima.totalLM||0}</div>`;
+          const pmMeta = isProject ? ppLm
+            : ppLm + `<div style="margin-top:4px;">${slaZReportBadge(l)}</div>${l.zreportLink?`<div class="link-cell" style="margin-top:4px;"><a href="${l.zreportLink}" target="_blank">Lihat ZReport ↗</a></div>`:''}`;
+          const keuMeta = isProject ? '' : `<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Realisasi: ${fmtRp(totalRealisasi)}</div>`;
           return `<tr>
             <td>${l.bulan}</td>
             <td>${slaLaporanBadge(l.targetTanggal, l.diterimaTanggal)}</td>
@@ -2314,27 +2337,31 @@ function renderLaporan(m,sp,c){
             ${komponenCell(l.tertulis)}
             ${komponenCell(l.ppt)}
             <td class="row-actions">
-              <button class="icon-btn" onclick="openEditLaporanModal('${m.id}','${sp.id}',${i})">✎</button>
-              <button class="icon-btn" onclick="hapusLaporan('${m.id}','${sp.id}',${i})">✕</button>
+              <button class="icon-btn" onclick="openEditLaporanModal('${m.id}','${sp.id}',${i}${jenisArg})">✎</button>
+              <button class="icon-btn" onclick="hapusLaporan('${m.id}','${sp.id}',${i}${jenisArg})">✕</button>
             </td>
           </tr>`;
-        }).join('') || `<tr><td colspan="8"><div class="empty-state">Belum ada laporan bulanan tercatat.</div></td></tr>`}
+        }).join('') || `<tr><td colspan="8"><div class="empty-state">${isProject?'Belum ada laporan project tercatat.':'Belum ada laporan bulanan tercatat.'}</div></td></tr>`}
         </tbody>
       </table>
     </div>`;
 }
-function laporanFormFields(prefix, l){
+function laporanFormFields(prefix, l, jenis){
   l = l || {};
+  const isProject = jenis==='project';
   const pm = l.penerima || {};
   const keu = l.keuangan || {};
   const dok = l.dokumentasi || {};
   const tert = l.tertulis || {};
   const ppt = l.ppt || {};
-  return `
-    ${bulanTahunFieldHtml(prefix, l.bulan)}
+  const zreportHtml = isProject ? '' : `
     <div class="field"><label>Tanggal Kirim Laporan ZReport</label><input id="f_${prefix}zreport" type="date" value="${escAttr(l.zreportTanggalKirim)}"></div>
     <div class="field"><label>Link Laporan ZReport</label><input id="f_${prefix}zreportlink" placeholder="https://drive.google.com/..." value="${escAttr(l.zreportLink)}"></div>
-    <div class="tag-note">Target ZReport otomatis = tanggal akhir bulan laporan. Tepat waktu = 100%, terlambat 1 hari = 50%, terlambat &gt;1 hari = 0%.</div>
+    <div class="tag-note">Target ZReport otomatis = tanggal akhir bulan laporan. Tepat waktu = 100%, terlambat 1 hari = 50%, terlambat &gt;1 hari = 0%.</div>`;
+  const keuNote = isProject ? '' : `
+    <div class="tag-note">Total realisasi (Zakat + Infak) diambil otomatis dari tab Dana pada bulan yang sama — tidak perlu diisi manual.</div>`;
+  return `
+    ${bulanTahunFieldHtml(prefix, l.bulan)}${zreportHtml}
     <div style="display:flex; gap:10px;">
       <div class="field" style="flex:1;"><label>Tanggal Target Penerimaan Laporan</label><input id="f_${prefix}target" type="date" value="${escAttr(l.targetTanggal)}"></div>
       <div class="field" style="flex:1;"><label>Tanggal Diterima Lembaga</label><input id="f_${prefix}diterima" type="date" value="${escAttr(l.diterimaTanggal)}"></div>
@@ -2349,8 +2376,7 @@ function laporanFormFields(prefix, l){
     </div>
 
     <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Keuangan</div>
-    <div class="field"><label>Tautan Laporan Keuangan</label><input id="f_${prefix}keulink" placeholder="https://drive.google.com/..." value="${escAttr(keu.link)}"></div>
-    <div class="tag-note">Total realisasi (Zakat + Infak) diambil otomatis dari tab Dana pada bulan yang sama — tidak perlu diisi manual.</div>
+    <div class="field"><label>Tautan Laporan Keuangan</label><input id="f_${prefix}keulink" placeholder="https://drive.google.com/..." value="${escAttr(keu.link)}"></div>${keuNote}
 
     <div style="font-size:12px; font-weight:600; color:var(--brand); margin:12px 0 8px;">Dokumentasi</div>
     <div class="field"><label>Tautan Dokumentasi</label><input id="f_${prefix}doklink" placeholder="https://drive.google.com/..." value="${escAttr(dok.link)}"></div>
@@ -2362,13 +2388,11 @@ function laporanFormFields(prefix, l){
     <div class="field"><label>Tautan PPT Presentasi</label><input id="f_${prefix}pptlink" placeholder="https://drive.google.com/..." value="${escAttr(ppt.link)}"></div>
   `;
 }
-function readLaporanForm(prefix){
+function readLaporanForm(prefix, jenis){
   const bulanNama = document.getElementById(`f_${prefix}bulanNama`).value;
   const bulanTahun = document.getElementById(`f_${prefix}bulanTahun`).value;
-  return {
+  const out = {
     bulan: `${bulanNama} ${bulanTahun}`,
-    zreportTanggalKirim: document.getElementById(`f_${prefix}zreport`).value,
-    zreportLink: document.getElementById(`f_${prefix}zreportlink`).value,
     targetTanggal: document.getElementById(`f_${prefix}target`).value,
     diterimaTanggal: document.getElementById(`f_${prefix}diterima`).value,
     penerima: {
@@ -2381,42 +2405,49 @@ function readLaporanForm(prefix){
     tertulis: { link: document.getElementById(`f_${prefix}tertlink`).value },
     ppt: { link: document.getElementById(`f_${prefix}pptlink`).value },
   };
+  if(jenis!=='project'){
+    out.zreportTanggalKirim = document.getElementById(`f_${prefix}zreport`).value;
+    out.zreportLink = document.getElementById(`f_${prefix}zreportlink`).value;
+  }
+  return out;
 }
-function openLaporanModal(mid,spId){
+function openLaporanModal(mid,spId,jenis){
+  const jArg = jenis==='project' ? ",'project'" : "";
   openModal(`
-    <h3>Tambah Laporan Bulanan</h3>
-    ${laporanFormFields('la')}
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanLaporan('${mid}','${spId}')">Simpan</button></div>
+    <h3>${jenis==='project'?'Tambah Laporan Project':'Tambah Laporan Bulanan'}</h3>
+    ${laporanFormFields('la', null, jenis)}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanLaporan('${mid}','${spId}'${jArg})">Simpan</button></div>
   `);
 }
-function simpanLaporan(mid,spId){
+function simpanLaporan(mid,spId,jenis){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  sp.laporanBulanan.push(readLaporanForm('la'));
+  laporanArr(sp,jenis).push(readLaporanForm('la',jenis));
   persistMitra(m);
   closeModal(); renderAll();
 }
-function openEditLaporanModal(mid,spId,idx){
+function openEditLaporanModal(mid,spId,idx,jenis){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  const l = sp.laporanBulanan[idx];
+  const l = laporanArr(sp,jenis)[idx];
+  const jArg = jenis==='project' ? ",'project'" : "";
   openModal(`
-    <h3>Edit Laporan Bulanan</h3>
-    ${laporanFormFields('ela', l)}
-    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditLaporan('${mid}','${spId}',${idx})">Simpan Perubahan</button></div>
+    <h3>${jenis==='project'?'Edit Laporan Project':'Edit Laporan Bulanan'}</h3>
+    ${laporanFormFields('ela', l, jenis)}
+    <div class="modal-actions"><button class="btn" onclick="closeModal()">Batal</button><button class="btn btn-primary" onclick="simpanEditLaporan('${mid}','${spId}',${idx}${jArg})">Simpan Perubahan</button></div>
   `);
 }
-function simpanEditLaporan(mid,spId,idx){
+function simpanEditLaporan(mid,spId,idx,jenis){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  sp.laporanBulanan[idx] = readLaporanForm('ela');
+  laporanArr(sp,jenis)[idx] = readLaporanForm('ela',jenis);
   persistMitra(m);
   closeModal(); renderAll();
 }
-function hapusLaporan(mid,spId,idx){
+function hapusLaporan(mid,spId,idx,jenis){
   const m = mitraList.find(x=>x.id===mid);
   const sp = m.subProgram.find(p=>p.id===spId);
-  sp.laporanBulanan.splice(idx,1);
+  laporanArr(sp,jenis).splice(idx,1);
   persistMitra(m);
   renderAll();
 }
@@ -2445,11 +2476,18 @@ function quarterBulanList(kuartalKey, tahun){
 }
 function danaInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return sp.dana.filter(d=>list.includes(d.bulan)); }
 function laporanInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return sp.laporanBulanan.filter(l=>list.includes(l.bulan)); }
-function waktuPenerimaanPct(sp,kuartal,tahun){
-  const entries = laporanInQuarter(sp,kuartal,tahun);
+function slaPctRataRata(entries){
   if(!entries.length) return null;
   const total = entries.reduce((a,l)=>{ const s=slaLaporan(l.targetTanggal,l.diterimaTanggal); return a+(s.pct===null?0:s.pct); },0);
   return Math.round(total/entries.length);
+}
+function waktuPenerimaanPct(sp,kuartal,tahun){
+  return slaPctRataRata(laporanInQuarter(sp,kuartal,tahun));
+}
+/* Aspek "Waktu Penerimaan Laporan Project": dari tab Laporan → Laporan Project (bukan laporan reguler). */
+function laporanProjectInQuarter(sp,kuartal,tahun){ const list=quarterBulanList(kuartal,tahun); return (sp.laporanProject||[]).filter(l=>list.includes(l.bulan)); }
+function waktuPenerimaanProjectPct(sp,kuartal,tahun){
+  return slaPctRataRata(laporanProjectInQuarter(sp,kuartal,tahun));
 }
 /* Mengacu langsung ke % yang muncul di tab Aktivitas → Rilis Berita & Dokumentasi
    (Harian) → Rekap per Pekan (realisasi jumlah rilis ÷ Target Rilis Pekanan).
@@ -2504,8 +2542,9 @@ function raportAspekList(sp, r){
   const aspects = [];
 
   if(r.adaProject){
-    aspects.push({key:'waktuProject', nama:'Waktu Penerimaan Laporan Project', pct:waktu,
-      detail:[{label:'Waktu Penerimaan Laporan (tab Laporan)', pct:waktu}]});
+    const waktuProj = waktuPenerimaanProjectPct(sp,r.kuartal,r.tahun);
+    aspects.push({key:'waktuProject', nama:'Waktu Penerimaan Laporan Project', pct:waktuProj,
+      detail:[{label:'Waktu Penerimaan Laporan Project (tab Laporan → Laporan Project)', pct:waktuProj}]});
     const partsProject = [
       {label:'Kesesuaian Asnaf', pct:asnafPct(r.asnafProject), text: r.asnafProject==='sesuai'?'Sesuai':r.asnafProject==='tidak'?'Tidak Sesuai':'Belum diisi'},
       {label:'Rilis Berita & Dokumentasi', pct:rilis},
