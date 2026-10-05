@@ -798,8 +798,21 @@ function isRekapAll(){
    data Dana/Laporan/Aktivitas digabung (array disambung), Target Rilis Pekanan dijumlahkan,
    dan evaluasi.raport menunjuk ke m.raportAll (referensi array yang sama, jadi
    push/splice/edit langsung tersimpan ke data mitra). */
+/* Jadwal Meeting & Catatan Hasil Meeting disimpan di LEVEL MITRA (m.jadwalAll / m.catatanAll),
+   bukan per sub program. Entri lama yang masih tersimpan per sub program otomatis dipindahkan
+   ke sini (dicatat asal sub programnya), supaya tidak ada data yang hilang. Aman dipanggil berulang. */
+function ensureMeetingData(m){
+  if(!Array.isArray(m.jadwalAll)) m.jadwalAll = [];
+  if(!Array.isArray(m.catatanAll)) m.catatanAll = [];
+  m.subProgram.forEach(sp=>{
+    const ev = sp.evaluasi; if(!ev) return;
+    if(Array.isArray(ev.jadwal) && ev.jadwal.length){ ev.jadwal.forEach(j=>m.jadwalAll.push({...j, asalSubProgram:sp.nama})); ev.jadwal = []; }
+    if(Array.isArray(ev.catatan) && ev.catatan.length){ ev.catatan.forEach(c=>m.catatanAll.push({...c, asalSubProgram:sp.nama})); ev.catatan = []; }
+  });
+}
 function mergedSubProgram(m){
   m.raportAll = Array.isArray(m.raportAll) ? m.raportAll : [];
+  ensureMeetingData(m);
   const sumTarget = k => m.subProgram.reduce((a,sp)=>a+(Number(sp.targetRilisPekanan && sp.targetRilisPekanan[k])||0),0);
   return {
     id: ALL_SP_ID,
@@ -809,7 +822,7 @@ function mergedSubProgram(m){
     aktivitasHarian: m.subProgram.flatMap(sp=>sp.aktivitasHarian),
     aktivitasMingguan: m.subProgram.flatMap(sp=>sp.aktivitasMingguan),
     targetRilisPekanan: {p1:sumTarget('p1'), p2:sumTarget('p2'), p3:sumTarget('p3'), p4:sumTarget('p4')},
-    evaluasi: {raport: m.raportAll, jadwal:[], catatan:[]},
+    evaluasi: {raport: m.raportAll, jadwal: m.jadwalAll, catatan: m.catatanAll},
   };
 }
 function findSp(m, spId){
@@ -962,6 +975,7 @@ function normalizeMitra(m){
       };
     });
   });
+  ensureMeetingData(m);
   return m;
 }
 function ensureSelectionValid(){
@@ -1085,22 +1099,22 @@ function statusLaporan(sp){
   if(done>=3) return 'warn';
   return 'crit';
 }
-function statusEvaluasi(sp){
+function statusEvaluasi(sp,m){
   if(sp.evaluasi.raport.length>0) return 'ok';
-  if(sp.evaluasi.jadwal.length>0) return 'warn';
+  if(m){ ensureMeetingData(m); if(m.jadwalAll.length>0) return 'warn'; } // jadwal meeting kini milik mitra
   return 'crit';
 }
-function stageStatusForSubProgram(sp,key){
+function stageStatusForSubProgram(sp,key,m){
   if(key==='dana') return statusDana(sp);
   if(key==='aktivitas') return statusAktivitas(sp);
   if(key==='laporan') return statusLaporan(sp);
-  if(key==='evaluasi') return statusEvaluasi(sp);
+  if(key==='evaluasi') return statusEvaluasi(sp,m);
 }
 /* Status per tahap untuk 1 mitra = kondisi terburuk di antara seluruh sub program */
 function stageStatusForMitra(m,key){
   if(key==='pra') return statusPra(m);
   if(!m.subProgram.length) return 'crit';
-  const hasil = m.subProgram.map(sp=>stageStatusForSubProgram(sp,key));
+  const hasil = m.subProgram.map(sp=>stageStatusForSubProgram(sp,key,m));
   if(hasil.includes('crit')) return 'crit';
   if(hasil.includes('warn')) return 'warn';
   return 'ok';
@@ -1270,7 +1284,7 @@ function renderStageRail(){
   if(!m || !sp){ rail.innerHTML=''; return; }
   const rekapAll = isRekapAll();
   rail.innerHTML = TABS.map((s,i)=>{
-    const st = rekapAll ? stageStatusForMitra(m,s.key) : stageStatusForSubProgram(sp,s.key);
+    const st = rekapAll ? stageStatusForMitra(m,s.key) : stageStatusForSubProgram(sp,s.key,m);
     return `
       <div class="stage-node ${activeStage===s.key?'active':''}" onclick="setStage('${s.key}')">
         <span class="num">0${i+1}</span>
@@ -1426,6 +1440,11 @@ function renderRekapAllAktivitas(m,c){
       </table>
     </div>`;
 }
+const LAP_KOMPONEN = [['penerima','Penerima Manfaat'],['keuangan','Keuangan'],['dokumentasi','Dokumentasi'],['tertulis','Laporan Tertulis'],['ppt','PPT']];
+function laporanKelengkapan(l){
+  const ada = k => !!(l[k] && l[k].link && String(l[k].link).trim());
+  return { n: LAP_KOMPONEN.filter(([k])=>ada(k)).length, kurang: LAP_KOMPONEN.filter(([k])=>!ada(k)).map(([,nm])=>nm) };
+}
 function renderRekapAllLaporan(m,c){
   const sps = m.subProgram;
   const rows = sps.map(sp=>{
@@ -1467,35 +1486,61 @@ function renderRekapAllLaporan(m,c){
           }).join('')}
         </tbody>
       </table>
-    </div>`;
+    </div>
+    ${(()=>{
+      // Riwayat: SEMUA bulan yang pernah dilaporkan, terbaru di atas, per sub program
+      const bulanList = [...new Set(sps.flatMap(sp=>sp.laporanBulanan.map(l=>l.bulan)))].sort((a,b)=>bulanKeyNum(b)-bulanKeyNum(a));
+      if(!bulanList.length) return '';
+      const body = bulanList.map(bulan=>{
+        const per = sps.map(sp=>({sp, l:sp.laporanBulanan.find(x=>x.bulan===bulan)}));
+        const melapor = per.filter(x=>x.l);
+        const pp = melapor.reduce((a,x)=>a+(x.l.penerima.totalPP||0),0);
+        const lm = melapor.reduce((a,x)=>a+(x.l.penerima.totalLM||0),0);
+        const head = `<tr style="background:var(--bg);"><td colspan="5" style="font-weight:600;">${escHtml(bulan)} <span style="font-weight:400; color:var(--ink-soft); font-size:11.5px;">· ${melapor.length}/${sps.length} sub program melapor · PP ${pp.toLocaleString('id-ID')} · LM ${lm.toLocaleString('id-ID')}</span></td></tr>`;
+        const rowsHtml = per.map(({sp,l})=>{
+          if(!l) return `<tr><td>${spLink(sp)}</td><td colspan="4" style="color:var(--ink-faint);">Belum ada laporan bulan ini</td></tr>`;
+          const k = laporanKelengkapan(l);
+          const st = k.n===5?'ok':k.n>=3?'warn':'crit';
+          return `<tr>
+            <td>${spLink(sp)}</td>
+            <td>${slaLaporanBadge(l.targetTanggal,l.diterimaTanggal)}</td>
+            <td><span class="chip ${statusChipClass[st]}">${k.n}/5 lengkap</span>${k.kurang.length?`<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">Kurang: ${k.kurang.join(', ')}</div>`:''}</td>
+            <td class="num-cell num-plain">${(l.penerima.totalPP||0).toLocaleString('id-ID')}</td>
+            <td class="num-cell num-plain">${(l.penerima.totalLM||0).toLocaleString('id-ID')}</td>
+          </tr>`;
+        }).join('');
+        return head+rowsHtml;
+      }).join('');
+      return `<div class="panel">
+        <div class="panel-head"><div><h3>Riwayat Laporan Bulanan</h3><p>Seluruh bulan yang pernah dilaporkan (bukan hanya bulan terakhir), dikelompokkan per bulan.</p></div></div>
+        <table>
+          <thead><tr><th>Sub Program</th><th>SLA Penerimaan</th><th>Kelengkapan</th><th class="num-cell">PP</th><th class="num-cell">LM</th></tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`;
+    })()}`;
 }
 function renderRekapAllEvaluasi(m,c){
+  const gab = mergedSubProgram(m); // sekaligus memastikan m.raportAll / jadwalAll / catatanAll sudah ada
   const sps = m.subProgram;
   const rows = sps.map(sp=>{
     const raportSorted = sortedRaportEntries(sp);
     const terbaru = raportSorted.length ? raportSorted[0].r : null;
     const nilai = terbaru ? raportOverallPct(sp,terbaru) : null;
-    return {
-      sp, jumlahRaport: sp.evaluasi.raport.length, terbaru, nilai,
-      terjadwal: sp.evaluasi.jadwal.filter(j=>j.status!=='selesai').length,
-      selesai: sp.evaluasi.jadwal.filter(j=>j.status==='selesai').length,
-      catatan: sp.evaluasi.catatan.length,
-    };
+    return { sp, jumlahRaport: sp.evaluasi.raport.length, terbaru, nilai };
   });
-  const jadwalTerjadwal = sps.flatMap(sp=>sp.evaluasi.jadwal.filter(j=>j.status!=='selesai').map(j=>({...j, spNama:sp.nama})))
-    .sort((a,b)=>(a.tanggal||'').localeCompare(b.tanggal||''));
   c.innerHTML = `
     ${rekapAllNote(m)}
     <div class="stat-grid">
-      <div class="stat-card"><div class="label">Raport Terbit</div><div class="value">${rows.reduce((s,r)=>s+r.jumlahRaport,0)}</div><div class="sub">Seluruh sub program</div></div>
-      <div class="stat-card"><div class="label">Meeting Terjadwal</div><div class="value">${rows.reduce((s,r)=>s+r.terjadwal,0)}</div><div class="sub">Belum selesai</div></div>
-      <div class="stat-card"><div class="label">Meeting Selesai</div><div class="value">${rows.reduce((s,r)=>s+r.selesai,0)}</div><div class="sub">Sudah dilaksanakan</div></div>
-      <div class="stat-card"><div class="label">Catatan Meeting</div><div class="value">${rows.reduce((s,r)=>s+r.catatan,0)}</div><div class="sub">Notulensi tersimpan</div></div>
+      <div class="stat-card"><div class="label">Raport Terbit</div><div class="value">${rows.reduce((s,r)=>s+r.jumlahRaport,0)+m.raportAll.length}</div><div class="sub">Sub program + gabungan</div></div>
+      <div class="stat-card"><div class="label">Meeting Terjadwal</div><div class="value">${m.jadwalAll.filter(j=>j.status!=='selesai').length}</div><div class="sub">Belum selesai</div></div>
+      <div class="stat-card"><div class="label">Meeting Selesai</div><div class="value">${m.jadwalAll.filter(j=>j.status==='selesai').length}</div><div class="sub">Sudah dilaksanakan</div></div>
+      <div class="stat-card"><div class="label">Catatan Meeting</div><div class="value">${m.catatanAll.length}</div><div class="sub">Notulensi tersimpan</div></div>
     </div>
     <div class="panel">
-      <div class="panel-head"><div><h3>Evaluasi per Sub Program</h3><p>Raport Kinerja terbaru, jadwal meeting evaluasi, dan catatan hasil meeting.</p></div></div>
+      <div class="panel-head"><div><h3>Raport Terbaru per Sub Program</h3><p>Ringkasan raport kinerja tiap sub program (diterbitkan di tab Evaluasi masing-masing).</p></div></div>
       <table>
-        <thead><tr><th>Sub Program</th><th>Raport Terbaru</th><th>Nilai</th><th class="num-cell">Raport Terbit</th><th class="num-cell">Meeting Terjadwal</th><th class="num-cell">Meeting Selesai</th><th class="num-cell">Catatan</th></tr></thead>
+        <thead><tr><th>Sub Program</th><th>Raport Terbaru</th><th>Nilai</th><th class="num-cell">Raport Terbit</th></tr></thead>
         <tbody>
           ${rows.map(r=>{
             const q = r.terbaru ? (QUARTALS.find(x=>x.key===r.terbaru.kuartal)?.label || r.terbaru.kuartal) : null;
@@ -1504,24 +1549,13 @@ function renderRekapAllEvaluasi(m,c){
               <td>${r.terbaru?`${q} ${r.terbaru.tahun}`:'—'}</td>
               <td>${r.nilai===null?'—':`${r.nilai}% <span style="color:var(--ink-soft);">(${gradeFromPct(r.nilai)})</span>`}</td>
               <td class="num-cell num-plain">${r.jumlahRaport}</td>
-              <td class="num-cell num-plain">${r.terjadwal}</td>
-              <td class="num-cell num-plain">${r.selesai}</td>
-              <td class="num-cell num-plain">${r.catatan}</td>
             </tr>`;
           }).join('')}
         </tbody>
       </table>
     </div>
-    ${raportPanelHtml(m,mergedSubProgram(m))}
-    <div class="panel">
-      <div class="panel-head"><div><h3>Jadwal Meeting Evaluasi Terjadwal</h3><p>Gabungan seluruh sub program, diurutkan dari tanggal terdekat.</p></div></div>
-      <table>
-        <thead><tr><th>Tanggal</th><th>Sub Program</th><th>Agenda</th></tr></thead>
-        <tbody>
-          ${jadwalTerjadwal.map(j=>`<tr><td class="mono">${fmtDate(j.tanggal)}</td><td>${escHtml(j.spNama)}</td><td>${escHtml(j.agenda)}</td></tr>`).join('') || `<tr><td colspan="3"><div class="empty-state">Tidak ada jadwal meeting yang menunggu.</div></td></tr>`}
-        </tbody>
-      </table>
-    </div>`;
+    ${raportPanelHtml(m,gab)}
+    ${meetingPanelsHtml(m)}`;
 }
 
 /* --- PRA (ditampilkan lewat modal "Kelengkapan Legalitas" dari topbar) --- */
@@ -2609,25 +2643,27 @@ function raportPanelHtml(m,sp){
       }).join('') || `<div class="empty-state"><span class="glyph">🏁</span>Belum ada raport kinerja diterbitkan.</div>`}
     </div>`;
 }
-function renderEvaluasi(m,sp,c){
-  c.innerHTML = `
-    ${raportPanelHtml(m,sp)}
+/* Jadwal Meeting Evaluasi + Catatan Hasil Meeting (level mitra). Tampil di Σ Rekap All; untuk mitra
+   dengan 1 sub program (tidak punya Rekap All) tampil di tab Evaluasi sub program itu. */
+function meetingPanelsHtml(m){
+  ensureMeetingData(m);
+  return `
     <div class="panel">
       <div class="panel-head">
         <div><h3>Jadwal Meeting Evaluasi</h3><p>Agenda pertemuan evaluasi dengan mitra.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openJadwalModal('${m.id}','${sp.id}')">+ Tambah Jadwal</button>
+        <button class="btn btn-primary btn-sm" onclick="openJadwalModal('${m.id}','${ALL_SP_ID}')">+ Tambah Jadwal</button>
       </div>
       <table>
         <thead><tr><th>Tanggal</th><th>Agenda</th><th>Status</th><th></th></tr></thead>
         <tbody>
-        ${sortedByTanggalDesc(sp.evaluasi.jadwal).map(({x:j,i})=>`
+        ${sortedByTanggalDesc(m.jadwalAll).map(({x:j,i})=>`
           <tr>
             <td class="mono">${fmtDate(j.tanggal)}</td>
-            <td>${j.agenda}</td>
+            <td>${j.agenda}${j.asalSubProgram?` <span style="color:var(--ink-faint); font-size:11px;">· dari ${escHtml(j.asalSubProgram)}</span>`:''}</td>
             <td><span class="chip ${j.status==='selesai'?'chip-ok':'chip-warn'}">${j.status==='selesai'?'Selesai':'Terjadwal'}</span></td>
             <td class="row-actions">
-              <button class="icon-btn" onclick="openEditJadwalModal('${m.id}','${sp.id}',${i})" title="Edit jadwal">✎</button>
-              <button class="icon-btn" onclick="hapusJadwal('${m.id}','${sp.id}',${i})">✕</button>
+              <button class="icon-btn" onclick="openEditJadwalModal('${m.id}','${ALL_SP_ID}',${i})" title="Edit jadwal">✎</button>
+              <button class="icon-btn" onclick="hapusJadwal('${m.id}','${ALL_SP_ID}',${i})">✕</button>
             </td>
           </tr>`).join('') || `<tr><td colspan="4"><div class="empty-state">Belum ada jadwal meeting.</div></td></tr>`}
         </tbody>
@@ -2636,21 +2672,26 @@ function renderEvaluasi(m,sp,c){
     <div class="panel">
       <div class="panel-head">
         <div><h3>Catatan Hasil Meeting</h3><p>Ringkasan poin penting dari setiap pertemuan.</p></div>
-        <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}','${sp.id}')">+ Tambah Catatan</button>
+        <button class="btn btn-primary btn-sm" onclick="openCatatanModal('${m.id}','${ALL_SP_ID}')">+ Tambah Catatan</button>
       </div>
-      ${sortedByTanggalDesc(sp.evaluasi.catatan).map(({x:cn,i})=>`
-        <div class="legalitas-item" style="cursor:pointer" onclick="lihatCatatan('${m.id}','${sp.id}',${i})">
+      ${sortedByTanggalDesc(m.catatanAll).map(({x:cn,i})=>`
+        <div class="legalitas-item" style="cursor:pointer" onclick="lihatCatatan('${m.id}','${ALL_SP_ID}',${i})">
           <div class="legalitas-left">
             <div class="name">${fmtDate(cn.tanggal)}${cn.waktu?` · ${cn.waktu}`:''} — ${escHtml(cn.agenda)||escHtml(cn.ringkasan)||'(Tanpa agenda)'}</div>
             <div class="date">${escHtml(cn.tempat)||escHtml(cn.ringkasan)||''}</div>
           </div>
           <div style="display:flex; gap:4px;" onclick="event.stopPropagation();">
-            <button class="icon-btn" title="Edit catatan" onclick="openEditCatatanModal('${m.id}','${sp.id}',${i})">✎</button>
-            <button class="icon-btn" title="Unduh Notulensi Word" onclick="unduhNotulensi('${m.id}','${sp.id}',${i})">⬇️</button>
-            <button class="icon-btn" onclick="hapusCatatan('${m.id}','${sp.id}',${i})">✕</button>
+            <button class="icon-btn" title="Edit catatan" onclick="openEditCatatanModal('${m.id}','${ALL_SP_ID}',${i})">✎</button>
+            <button class="icon-btn" title="Unduh Notulensi Word" onclick="unduhNotulensi('${m.id}','${ALL_SP_ID}',${i})">⬇️</button>
+            <button class="icon-btn" onclick="hapusCatatan('${m.id}','${ALL_SP_ID}',${i})">✕</button>
           </div>
         </div>`).join('') || `<div class="empty-state"><span class="glyph">📝</span>Belum ada catatan meeting.</div>`}
     </div>`;
+}
+function renderEvaluasi(m,sp,c){
+  c.innerHTML = `
+    ${raportPanelHtml(m,sp)}
+    ${m.subProgram.length===1 ? meetingPanelsHtml(m) : ''}`;
 }
 /* ------------------------- PENGATURAN PEJABAT ---------------------------
    Daftar pejabat (Jabatan, Nama, Tanda Tangan Digital) dipakai untuk memilih
@@ -3203,7 +3244,7 @@ function openJadwalModal(mid,spId){
 }
 function simpanJadwal(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const agenda = document.getElementById('f_jagenda').value.trim();
   if(!agenda) return;
   sp.evaluasi.jadwal.push({tanggal:document.getElementById('f_jtgl').value||new Date().toISOString().slice(0,10), agenda, status:document.getElementById('f_jstatus').value});
@@ -3212,14 +3253,14 @@ function simpanJadwal(mid,spId){
 }
 function hapusJadwal(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   sp.evaluasi.jadwal.splice(idx,1);
   persistMitra(m);
   renderAll();
 }
 function openEditJadwalModal(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const j = sp.evaluasi.jadwal[idx];
   openModal(`
     <h3>Edit Jadwal Meeting Evaluasi</h3>
@@ -3231,7 +3272,7 @@ function openEditJadwalModal(mid,spId,idx){
 }
 function simpanEditJadwal(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const j = sp.evaluasi.jadwal[idx];
   const agenda = document.getElementById('f_ejagenda').value.trim();
   if(!agenda) return;
@@ -3278,7 +3319,7 @@ function openCatatanModal(mid,spId){
 }
 function simpanCatatan(mid,spId){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const data = readCatatanForm('c');
   if(!data.agenda) return;
   sp.evaluasi.catatan.push(data);
@@ -3287,14 +3328,14 @@ function simpanCatatan(mid,spId){
 }
 function hapusCatatan(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   sp.evaluasi.catatan.splice(idx,1);
   persistMitra(m);
   renderAll();
 }
 function openEditCatatanModal(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const cn = sp.evaluasi.catatan[idx];
   openModal(`
     <h3>Edit Catatan Hasil Meeting</h3>
@@ -3304,7 +3345,7 @@ function openEditCatatanModal(mid,spId,idx){
 }
 function simpanEditCatatan(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const data = readCatatanForm('ec');
   if(!data.agenda) return;
   sp.evaluasi.catatan[idx] = data;
@@ -3313,7 +3354,7 @@ function simpanEditCatatan(mid,spId,idx){
 }
 function lihatCatatan(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const cn = sp.evaluasi.catatan[idx];
   const pesertaHtml = (cn.peserta&&cn.peserta.length) ? `<ol style="margin:4px 0 0 18px; padding:0;">${cn.peserta.map(p=>`<li>${escHtml(p)}</li>`).join('')}</ol>` : '<span style="color:var(--ink-faint)">—</span>';
   const tindakHtml = (cn.tindakLanjut&&cn.tindakLanjut.length) ? `<ul style="margin:4px 0 0 18px; padding:0;">${cn.tindakLanjut.map(p=>`<li>${escHtml(p)}</li>`).join('')}</ul>` : '<span style="color:var(--ink-faint)">—</span>';
@@ -3342,7 +3383,7 @@ function sanitizeFilename(s){
    Nama file: 'yyyy-mm-dd Notulensi Meeting $agenda'. */
 function unduhNotulensi(mid,spId,idx){
   const m = mitraList.find(x=>x.id===mid);
-  const sp = m.subProgram.find(p=>p.id===spId);
+  const sp = findSp(m,spId);
   const cn = sp.evaluasi.catatan[idx];
   const agenda = cn.agenda || cn.ringkasan || 'Meeting';
   const tanggal = cn.tanggal || new Date().toISOString().slice(0,10);
